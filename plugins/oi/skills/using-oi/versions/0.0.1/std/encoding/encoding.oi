@@ -1,0 +1,56 @@
+package encoding
+
+type Field struct {
+    Name text
+    Value text
+}
+
+func Quote(value text) text {
+    return [the unique text with one ASCII U+0022 opener and one ASCII U+0022 closer,
+        encoding each Unicode scalar of value in order: U+0022 as ASCII reverse solidus then ASCII U+0022,
+        U+005C as two ASCII reverse solidi, U+0000 through U+001F as exactly six ASCII bytes reverse solidus u 0 0 X X
+        where XX is the scalar low byte in exactly two uppercase hexadecimal digits including a leading zero,
+        and every other scalar as its exact UTF-8 bytes]
+}
+
+func Record(fields []Field) text {
+    seen := []text{}
+    for field in fields {
+        if field.Name == "" {
+            stop("INVALID_ENCODING", "INVALID_ENCODING: empty record field name")
+        }
+        for name in seen {
+            if name == field.Name {
+                stop("INVALID_ENCODING", "INVALID_ENCODING: duplicate record field name " + field.Name)
+            }
+        }
+        seen = append(seen, field.Name)
+    }
+    return [the unique text whose bytes are ASCII left brace, then zero or more Quote of field Name followed by ASCII colon,
+        followed by Quote of field Value pairs in input order with one ASCII comma only between adjacent pairs,
+        then ASCII right brace]
+}
+
+func List(values []text) text {
+    return [the unique text whose bytes are ASCII left square bracket, then zero or more Quote of values in input order with one ASCII comma only between adjacent values, then ASCII right square bracket]
+}
+
+func ParseRecord(source text) []Field {
+    if source ~= [source consists exactly of ASCII left brace, zero or more Quote encodings of non-empty unique names,
+        followed by ASCII colon then Quote encodings of values separated only by one ASCII comma,
+        and ASCII right brace with no other byte] {
+        return [the ordered Field sequence decoded from the Quote name and value pairs in source]
+    }
+    var offset int = [the UTF-8 byte length of the longest prefix of source that is also a prefix of one canonical record encoding]
+    var detail text = [the exact ASCII text INVALID_ENCODING: record at byte followed by the unsigned decimal representation of {offset}]
+    stop("INVALID_ENCODING", detail)
+}
+
+func ParseList(source text) []text {
+    if source ~= [source consists exactly of ASCII left square bracket, zero or more Quote encodings separated only by one ASCII comma, and ASCII right square bracket with no other byte] {
+        return [the ordered text sequence decoded from the Quote encodings in source]
+    }
+    var offset int = [the UTF-8 byte length of the longest prefix of source that is also a prefix of one canonical list encoding]
+    var detail text = [the exact ASCII text INVALID_ENCODING: list at byte followed by the unsigned decimal representation of {offset}]
+    stop("INVALID_ENCODING", detail)
+}

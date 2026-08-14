@@ -1,0 +1,88 @@
+package main
+
+import "std/user"
+
+type Stage enum {
+    Context
+    Draft
+    Review
+    ReaderTest
+    Done
+}
+
+type DocumentState struct {
+    Stage Stage
+    Requirements []text
+    Draft text
+    Feedback []text
+}
+
+effect Checkpoint(state DocumentState) DocumentState {
+    uses document.checkpoint
+    contract [durably record and return exact typed coauthoring state {state}]
+}
+
+effect Reply(value DocumentState) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func GatherContext(request text) []text {
+    var audience user.Answer = user.Ask(user.Prompt{
+        Question: "Who is the primary audience?",
+        Context: request,
+    })
+    var purpose user.Answer = user.Ask(user.Prompt{
+        Question: "What should the reader understand or decide?",
+        Context: request,
+    })
+    return []text{audience.Value, purpose.Value}
+}
+
+func ReaderTest(state DocumentState) []text {
+    return []text{[fresh reader checks audience and purpose in {state.Draft}]}
+}
+
+func AskClarification(state DocumentState) text {
+    var answer user.Answer = user.Ask(user.Prompt{
+        Question: "Resolve the reader's remaining ambiguity.",
+        Context: state.Feedback[0],
+    })
+    return answer.Value
+}
+
+func Clarify(state DocumentState) unit {
+    var clarification text = await oi AskClarification(state)
+    state.Feedback = append(state.Feedback, clarification)
+    state.Stage = Stage.Done
+    var finalState DocumentState = Checkpoint(state)
+    Reply(finalState)
+}
+
+func Coauthor(request text) DocumentState {
+    var requirements []text = await oi GatherContext(request)
+    var state DocumentState = DocumentState{
+        Stage: Stage.Context,
+        Requirements: requirements,
+        Draft: "",
+        Feedback: []text{},
+    }
+    state = Checkpoint(state)
+    state.Stage = Stage.Draft
+    state.Draft = [document for {requirements[0]} so they can {requirements[1]}]
+    state = Checkpoint(state)
+    state.Stage = Stage.Review
+    state = Checkpoint(state)
+    state.Stage = Stage.ReaderTest
+    state.Feedback = await oi ReaderTest(state)
+    state = Checkpoint(state)
+    if len(state.Feedback) > 0 {
+        handoff Clarify(state)
+    }
+    state.Stage = Stage.Done
+    return Checkpoint(state)
+}
+
+func main(request text) {
+    Reply(Coauthor(request))
+}

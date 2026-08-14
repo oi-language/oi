@@ -1,0 +1,9 @@
+source
+source-content
+destination
+destination-kind
+destination-entries
+module
+main.oi
+oi.mod
+SKILL.md

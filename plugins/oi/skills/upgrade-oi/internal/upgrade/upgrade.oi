@@ -1,0 +1,181 @@
+package upgrade
+
+import "std/diagnostic"
+import "std/fs"
+import "oi/skills/upgrade-oi/internal/report"
+
+type CompileStatus enum {
+    Pass
+    Fail
+}
+
+type CompileResult struct {
+    Status CompileStatus
+    Module text?
+    Authorities []text
+    Diagnostics []diagnostic.Diagnostic
+}
+
+effect CompileSource(source fs.Path, available []text) CompileResult {
+    uses tool.compile
+    contract [validate {source} under exact Oi 0.0.1 with exactly {available}, without executing or writing it, and preserve only status, module, authorities, and diagnostics]
+}
+
+type Snapshot struct {
+    Version text?
+    Installed bool
+}
+
+type SourceProbe struct {
+    Version text?
+    Diagnostics []diagnostic.Diagnostic
+}
+
+func Contains(values []text, wanted text) bool {
+    for value in values {
+        if value == wanted {
+            return true
+        }
+    }
+    return false
+}
+
+func NormalizeTarget(value text) text? {
+    if value == "0.0.1" {
+        return value
+    }
+    return none
+}
+
+func TargetSnapshot(value text, installed []text) Snapshot {
+    var version text? = NormalizeTarget(value)
+    return Snapshot{
+        Version: version,
+        Installed: version != none && Contains(installed, "0.0.1"),
+    }
+}
+
+func FailureDiagnostic(value failure) diagnostic.Diagnostic {
+    return diagnostic.Diagnostic{
+        Category: value.Category,
+        Phase: value.Phase,
+        Location: value.Location,
+        Detail: value.Detail,
+        Trace: value.Trace,
+    }
+}
+
+func FailedProbe(value failure) SourceProbe {
+    return SourceProbe{
+        Version: none,
+        Diagnostics: []diagnostic.Diagnostic{FailureDiagnostic(value)},
+    }
+}
+
+func FindSourceVersion(source fs.Path) SourceProbe {
+    observed := capture(fs.Scan(source))
+    if observed.Ok {
+        for directory in MetadataDirectories(source, observed.Value) {
+            var path fs.Path = Join(directory, "oi.mod")
+            scanned := capture(fs.Scan(path))
+            if scanned.Ok {
+                var state fs.Observation = scanned.Value
+                if state.Kind == fs.Kind.File {
+                    read := capture(fs.Read(path))
+                    if read.Ok {
+                        return ParseSourceMetadata(path, read.Value)
+                    } else {
+                        return FailedProbe(read.Failure)
+                    }
+                }
+            } else {
+                return FailedProbe(scanned.Failure)
+            }
+        }
+    } else {
+        return FailedProbe(observed.Failure)
+    }
+    return SourceProbe{
+        Version: none,
+        Diagnostics: []diagnostic.Diagnostic{
+            diagnostic.New("MISSING_MODULE_FILE", "module", SourceLocation(source), "nearest oi.mod"),
+        },
+    }
+}
+
+func UnavailableDiagnostic(category text, location text, detail text) []diagnostic.Diagnostic {
+    return []diagnostic.Diagnostic{
+        diagnostic.New(category, "upgrade", location, detail),
+    }
+}
+
+func Check(
+    source fs.Path,
+    targetVersion text,
+    installed []text,
+    available []text,
+) report.UpgradeReport {
+    var target Snapshot = TargetSnapshot(targetVersion, installed)
+    if !target.Installed {
+        return report.Unavailable(
+            none,
+            targetVersion,
+            UnavailableDiagnostic(
+                "UPGRADE_TARGET_UNAVAILABLE",
+                "upgrade-input:1:1",
+                "target snapshot 0.0.1 is not explicitly installed",
+            ),
+        )
+    }
+
+    var sourceProbe SourceProbe = FindSourceVersion(source)
+    if len(sourceProbe.Diagnostics) != 0 {
+        return report.Unavailable(sourceProbe.Version, targetVersion, sourceProbe.Diagnostics)
+    }
+    if sourceProbe.Version != "0.0.1" || !Contains(installed, "0.0.1") {
+        return report.Unavailable(
+            sourceProbe.Version,
+            targetVersion,
+            UnavailableDiagnostic(
+                "UPGRADE_SOURCE_UNAVAILABLE",
+                "oi.mod:1:1",
+                "source snapshot is not the installed 0.0.1 snapshot",
+            ),
+        )
+    }
+
+    compiled := capture(CompileSource(source, available))
+    if compiled.Ok {
+        var result CompileResult = compiled.Value
+        if result.Status == CompileStatus.Fail || len(result.Diagnostics) != 0 {
+            return report.Incompatible(sourceProbe.Version, targetVersion, result.Diagnostics)
+        }
+        return report.Compatible(sourceProbe.Version, targetVersion)
+    } else {
+        return report.Incompatible(
+            sourceProbe.Version,
+            targetVersion,
+            []diagnostic.Diagnostic{FailureDiagnostic(compiled.Failure)},
+        )
+    }
+}
+
+func MetadataDirectories(source fs.Path, observed fs.Observation) []fs.Path {
+    return [the exact lexical ancestor directories nearest first, starting with {source} when {observed.Kind}
+        is Directory and with the containing directory otherwise]
+}
+
+func Join(directory fs.Path, name text) fs.Path {
+    return [the normalized child path named {name} within {directory}]
+}
+
+func SourceLocation(source fs.Path) text {
+    return [the normalized module-relative {source} location at line 1 column 1]
+}
+
+func ParseSourceMetadata(path fs.Path, content text) SourceProbe {
+    return [the exact SourceProbe obtained by parsing only oi.mod metadata in {content} at {path},
+        with Version equal to its sole exact oi version token; Diagnostics is empty exactly for one canonical
+        module directive followed by one canonical oi directive, and otherwise contains the canonical
+        module-phase diagnostics for every missing, duplicate, or malformed directive]
+}

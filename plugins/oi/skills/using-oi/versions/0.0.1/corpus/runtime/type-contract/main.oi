@@ -1,0 +1,7 @@
+package main
+
+type Positive int [the {value} is greater than zero]
+
+func main() {
+    Positive(0)
+}

@@ -1,0 +1,8 @@
+package main
+func Invalid() map[text]text {
+    return map[text]text{}
+}
+
+func main() {
+    Invalid()
+}

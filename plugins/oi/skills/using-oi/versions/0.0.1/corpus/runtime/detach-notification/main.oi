@@ -1,0 +1,25 @@
+package main
+
+func Background(value text, fail bool) text {
+    held := Hold(value)
+    if fail {
+        stop("DETACHED_FAILURE", held)
+    }
+    return [detached {held}]
+}
+
+effect Hold(value text) text {
+    uses local.hold
+    contract [suspend until the harness completes or cancels this invocation]
+}
+
+effect Reply(value text) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main(value text) {
+    detach oi Background([success {value}], false)
+    detach oi Background([failure {value}], true)
+    Reply("parent-complete")
+}

@@ -1,0 +1,16 @@
+package task
+
+type State enum {
+    Pending
+    Running
+    Done
+    Failed
+    Cancelled
+}
+
+type Info struct {
+    ID text
+    State State
+    Target text
+    Detached bool
+}

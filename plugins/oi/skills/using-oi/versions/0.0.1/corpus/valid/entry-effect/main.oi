@@ -1,0 +1,16 @@
+package main
+
+type Result struct { Source text; Accepted bool }
+
+func Build(source text) Result {
+    return Result{Source: source, Accepted: true}
+}
+
+effect Respond(value Result) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main(source text) {
+    Respond(Build(source))
+}

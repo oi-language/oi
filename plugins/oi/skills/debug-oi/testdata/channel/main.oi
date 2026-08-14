@@ -1,0 +1,18 @@
+package main
+
+func Produce(output sender[text]) {
+    send(output, "ready")
+}
+
+func main() {
+    var messages channel[text] = channel[text](1)
+    oi Produce(messages.Send)
+    select {
+    case item := receive(messages.Receive):
+        if item != "ready" {
+            stop("CHANNEL_VALUE_MISMATCH", item)
+        }
+    default:
+        stop("CHANNEL_NOT_READY", "journal selected default")
+    }
+}

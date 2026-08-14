@@ -1,0 +1,31 @@
+package main
+
+func Relay(input receiver[text], acknowledgements sender[text]) unit {
+    value := receive(input)
+    send(acknowledgements, value)
+}
+
+effect Reply(value []text) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main() {
+    messages := channel[text](1)
+    acknowledgements := channel[text](1)
+    observations := []text{}
+    select {
+    case value := receive(messages.Receive):
+        observations = append(observations, value)
+    default:
+        observations = append(observations, "default")
+    }
+    worker := oi Relay(messages.Receive, acknowledgements.Send)
+    select {
+    case send(messages.Send, "ready"):
+        observations = append(observations, "sent")
+    }
+    receive(acknowledgements.Receive)
+    await worker
+    Reply(observations)
+}

@@ -1,0 +1,14 @@
+package main
+
+import "std/fs"
+import "oi/skills/upgrade-oi/internal/report"
+import "oi/skills/upgrade-oi/internal/upgrade"
+
+effect Reply(value report.UpgradeReport) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main(source fs.Path, targetVersion text, installed []text, available []text) {
+    Reply(upgrade.Check(source, targetVersion, installed, available))
+}

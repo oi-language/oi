@@ -1,0 +1,48 @@
+package report
+
+import "std/diagnostic"
+import "std/fs"
+
+type Status enum {
+    Unchanged
+    Changed
+    Failed
+}
+
+type FormatReport struct {
+    Status Status
+    Path fs.Path
+    Written bool
+    Source text?
+    Diagnostics []diagnostic.Diagnostic
+}
+
+func Unchanged(path fs.Path, source text) FormatReport {
+    return FormatReport{
+        Status: Status.Unchanged,
+        Path: path,
+        Written: false,
+        Source: source,
+        Diagnostics: []diagnostic.Diagnostic{},
+    }
+}
+
+func Changed(path fs.Path, source text) FormatReport {
+    return FormatReport{
+        Status: Status.Changed,
+        Path: path,
+        Written: true,
+        Source: source,
+        Diagnostics: []diagnostic.Diagnostic{},
+    }
+}
+
+func Failed(path fs.Path, written bool, source text?, diagnostics []diagnostic.Diagnostic) FormatReport {
+    return FormatReport{
+        Status: Status.Failed,
+        Path: path,
+        Written: written,
+        Source: source,
+        Diagnostics: diagnostics,
+    }
+}

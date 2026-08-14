@@ -1,0 +1,16 @@
+package main
+
+func Review(change text) text {
+    return [review {change}]
+}
+
+effect Reply(value text) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main(change text) {
+    await oi Review(change)
+    result := await oi Review(change)
+    Reply(result)
+}

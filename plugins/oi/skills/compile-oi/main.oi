@@ -1,0 +1,14 @@
+package main
+
+import "std/fs"
+import "oi/skills/compile-oi/internal/compile"
+import "oi/skills/compile-oi/internal/report"
+
+effect Reply(value report.CompileReport) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main(target fs.Path, available []text) {
+    Reply(compile.Validate(target, available))
+}

@@ -1,0 +1,63 @@
+package report
+
+import "std/diagnostic"
+
+type EventKind enum {
+    Enter
+    Bind
+    Branch
+    Effect
+    Launch
+    Send
+    Receive
+    Await
+    Return
+    Stop
+}
+
+type Event struct {
+    Sequence int
+    Kind EventKind
+    Location text
+    Detail text
+}
+
+type Status enum {
+    Pass
+    Fail
+    Incomplete
+}
+
+type DebugTrace struct {
+    Status Status
+    Events []Event
+    Diagnostics []diagnostic.Diagnostic
+    RequiredTranscriptEntries []text
+}
+
+func Passed(events []Event) DebugTrace {
+    return DebugTrace{
+        Status: Status.Pass,
+        Events: events,
+        Diagnostics: []diagnostic.Diagnostic{},
+        RequiredTranscriptEntries: []text{},
+    }
+}
+
+func Failed(events []Event, diagnostics []diagnostic.Diagnostic) DebugTrace {
+    return DebugTrace{
+        Status: Status.Fail,
+        Events: events,
+        Diagnostics: diagnostics,
+        RequiredTranscriptEntries: []text{},
+    }
+}
+
+func Waiting(events []Event, required []text) DebugTrace {
+    return DebugTrace{
+        Status: Status.Incomplete,
+        Events: events,
+        Diagnostics: []diagnostic.Diagnostic{},
+        RequiredTranscriptEntries: required,
+    }
+}

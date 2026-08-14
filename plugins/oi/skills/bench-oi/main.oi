@@ -1,0 +1,13 @@
+package main
+
+import "oi/skills/bench-oi/internal/bench"
+import "oi/skills/bench-oi/internal/report"
+
+effect Reply(value report.BenchmarkReport) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main(suite bench.Suite, identity bench.RunIdentity) {
+    Reply(bench.Run(suite, identity))
+}

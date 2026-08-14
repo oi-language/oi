@@ -1,0 +1,22 @@
+package main
+
+effect Lookup(key text) text {
+    uses fixture.read
+    contract [return the deterministic fixture value for {key}]
+}
+
+effect Reply(value text) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the fixture caller]
+}
+
+func Resolve(key text) text {
+    if key == "known" {
+        return Lookup(key)
+    }
+    return "fallback"
+}
+
+func main(key text) {
+    Reply(Resolve(key))
+}

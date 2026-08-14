@@ -1,0 +1,15 @@
+package main
+
+type Box struct {
+    Values []int
+    Label text
+}
+
+func main(index int) {
+    var box Box = Box{Values: []int{1, 2, 3}, Label: "before"}
+    box.Values[index] = 9
+    box.Label = "after"
+    if box.Values[index] != 9 || box.Label != "after" {
+        stop("STORE_MISMATCH", "field or dynamic index update differs")
+    }
+}

@@ -1,0 +1,5 @@
+package checks
+
+func Check(value text) bool {
+    return value == "checked"
+}

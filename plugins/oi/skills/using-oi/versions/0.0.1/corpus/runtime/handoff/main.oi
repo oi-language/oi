@@ -1,0 +1,19 @@
+package main
+
+func Prepare(value text) text {
+    return [prepared {value}]
+}
+
+effect Reply(value text) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func Continue(value text) unit {
+    Reply([continued after {value}])
+}
+
+func main(value text) {
+    oi Prepare(value)
+    handoff Continue(value)
+}

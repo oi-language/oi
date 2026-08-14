@@ -1,0 +1,40 @@
+# Oi repository rules
+
+## Architecture
+- Oi is 0% scripts and 100% Skill.
+- Product behavior belongs in `.oi`; `SKILL.md` only triggers, loads, routes, and names the entry.
+- Markdown language/runtime specifications define semantics; they do not implement tool algorithms.
+
+## Sources of truth
+- `using-oi/versions/<version>/execution.md` is the sole base-language file: its compact prefix owns exact snapshot identity, deterministic load order, manifest closure, load failures, and budgets; its continuous body owns complete grammar, static semantics, and shallow execution semantics.
+- 0.0.1 has no `core.md`, `syntax.md`, `types.md`, `functions.md`, or other base-language shard.
+- `using-oi/versions/<version>/runtime/` owns only detailed dynamics for core-declared constructs.
+- Versioned `std/` and reachable `.oi` own executable behavior; corpus fixtures own expected observations.
+- README and `docs/language/` explain the product but cannot override a versioned specification.
+
+## Language discipline
+- Describe Oi as an independent language.
+- An executable package has one lowercase host-only resultless `main` with ordinary typed caller inputs; complex input is a program type, not a built-in `Input`. Oi source cannot call it; adapters expose only explicitly mapped concrete typed effect payloads.
+- A semantic expression performs one contextually typed judgment; write control, effects, retry, dispatch, and stop behavior as Oi structure.
+- Keep effects and authorities explicit. Child context and channel endpoints cross boundaries only through typed arguments.
+
+## Versions
+- Every `.oi` resolves one exact version through its nearest `oi.mod`; never default, combine, or reinterpret.
+- Upgrade the language snapshot, stdlib, bundled tools, adapters, examples, corpus, and manifests as one release unit.
+- After release, keep an older snapshot immutable and make upgrades explicit and compatibility-checked.
+
+## Implementation boundaries
+- Do not add Python, JavaScript, TypeScript, Shell, PowerShell, batch, binary, executable test helpers, or a second runtime.
+- Keep standard packages small and load them only when imported.
+- Do not encode structs, lists, state, or diagnostics as internal line protocols; encode only at real text boundaries.
+
+## Verification
+- Add or update corpus behavior before changing semantics.
+- Run the smallest relevant corpus/tool checks, then cross-tool and release gates.
+- Report exact commands, structured results, character budgets, and final diff status.
+- Product `.oi` lines must not exceed 240 characters. Execution spec, index prefix, prefix+adapter, adapter, and runtime-shard budgets are 14,000, 2,500, 4,000, 1,500, and 5,000 decoded characters.
+
+## Public documentation
+- Keep normative specifications and explanatory documentation separate.
+- README and `docs/language/` must describe released behavior or an explicitly identified pre-publication state accurately.
+- Public files must contain only information intended for repository users and contributors.

@@ -1,0 +1,45 @@
+package report
+
+import "std/diagnostic"
+
+type Status enum {
+    Pass
+    Fail
+}
+
+type CompileReport struct {
+    Status Status
+    Module text?
+    SourceCount int
+    Authorities []text
+    Shards []text
+    Diagnostics []diagnostic.Diagnostic
+}
+
+func Pass(module text?, sourceCount int, authorities []text, shards []text) CompileReport {
+    return CompileReport{
+        Status: Status.Pass,
+        Module: module,
+        SourceCount: sourceCount,
+        Authorities: authorities,
+        Shards: shards,
+        Diagnostics: []diagnostic.Diagnostic{},
+    }
+}
+
+func Fail(
+    module text?,
+    sourceCount int,
+    authorities []text,
+    shards []text,
+    diagnostics []diagnostic.Diagnostic,
+) CompileReport {
+    return CompileReport{
+        Status: Status.Fail,
+        Module: module,
+        SourceCount: sourceCount,
+        Authorities: authorities,
+        Shards: shards,
+        Diagnostics: diagnostics,
+    }
+}

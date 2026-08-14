@@ -1,0 +1,197 @@
+package bench
+
+import "std/diagnostic"
+import "std/fs"
+import "oi/skills/bench-oi/internal/report"
+
+const MaxCases int = 64
+
+type RunIdentity struct {
+    Harness text
+    Model text
+    PluginVersion text
+    LanguageVersion text
+}
+
+type Expected struct {
+    Status text
+    Observations []text
+    ForbiddenHits []text
+    FailureCategory text?
+}
+
+type Case struct {
+    Index int
+    ID text
+    Target fs.Path
+    Input text
+    Observe text
+    Forbid text
+    Expected Expected
+}
+
+type Suite struct {
+    Cases []Case
+}
+
+effect InvokeTarget(target fs.Path, input text, observe text, forbid text) report.TestReport {
+    uses agent.invoke
+    contract [run {target} with {input} in a fresh context and report {observe} plus every {forbid} hit]
+}
+
+func SameText(left []text, right []text) bool {
+    if len(left) != len(right) {
+        return false
+    }
+    var index int = 0
+    for index < len(left) {
+        if left[index] != right[index] {
+            return false
+        }
+        index = index + 1
+    }
+    return true
+}
+
+func Compare(testCase Case, actual report.TestReport) report.CaseResult {
+    var differences []text = []text{}
+    if testCase.Expected.Status != actual.Status {
+        differences = append(differences, "status")
+    }
+    if !SameText(testCase.Expected.Observations, actual.Observations) {
+        differences = append(differences, "observations")
+    }
+    if len(actual.ForbiddenHits) != 0 {
+        differences = append(differences, "forbidden-hit")
+    } else if !SameText(testCase.Expected.ForbiddenHits, actual.ForbiddenHits) {
+        differences = append(differences, "forbidden-hits")
+    }
+    var actualFailure text? = report.FailureCategory(actual)
+    if testCase.Expected.FailureCategory != actualFailure {
+        differences = append(differences, "failure-category")
+    }
+    return report.CaseResult{
+        Index: testCase.Index,
+        ID: testCase.ID,
+        Passed: len(differences) == 0,
+        Actual: actual,
+        Differences: differences,
+    }
+}
+
+func FailureDiagnostic(value failure) diagnostic.Diagnostic {
+    return diagnostic.Diagnostic{
+        Category: value.Category,
+        Phase: value.Phase,
+        Location: value.Location,
+        Detail: value.Detail,
+        Trace: value.Trace,
+    }
+}
+
+func FailedCase(testCase Case, problem failure) report.CaseResult {
+    var finding diagnostic.Diagnostic = FailureDiagnostic(problem)
+    var actual report.TestReport = report.TestReport{
+        Status: "FAIL",
+        Observations: []text{},
+        ForbiddenHits: []text{},
+        Failure: finding,
+    }
+    return report.CaseResult{
+        Index: testCase.Index,
+        ID: testCase.ID,
+        Passed: false,
+        Actual: actual,
+        Differences: []text{"invoke-target"},
+    }
+}
+
+func Test(testCase Case, results sender[report.CaseResult]) unit {
+    var attempt outcome[report.TestReport] = capture(InvokeTarget(testCase.Target, testCase.Input, testCase.Observe, testCase.Forbid))
+    if attempt.Ok {
+        send(results, Compare(testCase, attempt.Value))
+    } else {
+        send(results, FailedCase(testCase, attempt.Failure))
+    }
+}
+
+func IdentityDiagnostics(identity RunIdentity) []diagnostic.Diagnostic {
+    if len(identity.Harness) == 0 || len(identity.Model) == 0 || len(identity.PluginVersion) == 0 {
+        return []diagnostic.Diagnostic{diagnostic.New("BENCH_IDENTITY_INCOMPLETE", "input binding", "main.oi:1:1", "run identity fields must be non-empty")}
+    }
+    if identity.LanguageVersion != "0.0.1" {
+        return []diagnostic.Diagnostic{diagnostic.New("BENCH_IDENTITY_LANGUAGE_VERSION", "input binding", "main.oi:1:1", "language version must be exactly 0.0.1")}
+    }
+    return []diagnostic.Diagnostic{}
+}
+
+func SuiteDiagnostics(suite Suite) []diagnostic.Diagnostic {
+    if len(suite.Cases) > MaxCases {
+        return []diagnostic.Diagnostic{diagnostic.New("BENCH_SUITE_TOO_LARGE", "input binding", "main.oi:1:1", "suite may contain at most 64 cases")}
+    }
+    var seen []int = []int{}
+    for testCase in suite.Cases {
+        for index in seen {
+            if index == testCase.Index {
+                var detail text = [case index {testCase.Index} appears more than once]
+                return []diagnostic.Diagnostic{diagnostic.New("BENCH_DUPLICATE_CASE_INDEX", "input binding", "main.oi:1:1", detail)}
+            }
+        }
+        seen = append(seen, testCase.Index)
+    }
+    return []diagnostic.Diagnostic{}
+}
+
+func InputDiagnostics(suite Suite, identity RunIdentity) []diagnostic.Diagnostic {
+    var findings []diagnostic.Diagnostic = IdentityDiagnostics(identity)
+    for finding in SuiteDiagnostics(suite) {
+        findings = append(findings, finding)
+    }
+    return findings
+}
+
+func EmptySuite(identity RunIdentity) report.BenchmarkReport {
+    return report.Build([]report.CaseResult{}, IdentityDiagnostics(identity))
+}
+
+func CollectInCaseIndexOrder(suite Suite, results receiver[report.CaseResult], identity RunIdentity) report.BenchmarkReport {
+    var completed []report.CaseResult = []report.CaseResult{}
+    var received int = 0
+    for received < len(suite.Cases) {
+        completed = append(completed, receive(results))
+        received = received + 1
+    }
+
+    var ordered []report.CaseResult = []report.CaseResult{}
+    for testCase in suite.Cases {
+        for result in completed {
+            if result.Index == testCase.Index {
+                ordered = append(ordered, result)
+                break
+            }
+        }
+    }
+
+    var diagnostics []diagnostic.Diagnostic = IdentityDiagnostics(identity)
+    for result in ordered {
+        for finding in report.FailureDiagnostics(result.Actual) {
+            diagnostics = append(diagnostics, finding)
+        }
+    }
+    return report.Build(ordered, diagnostics)
+}
+
+func Run(suite Suite, identity RunIdentity) report.BenchmarkReport {
+    var findings []diagnostic.Diagnostic = InputDiagnostics(suite, identity)
+    if len(findings) != 0 {
+        return report.Build([]report.CaseResult{}, findings)
+    }
+    if len(suite.Cases) == 0 {
+        return EmptySuite(identity)
+    }
+    var results channel[report.CaseResult] = channel[report.CaseResult](1)
+    for testCase in suite.Cases {
+        oi Test(testCase, results.Send)
+    }
+    return CollectInCaseIndexOrder(suite, results.Receive, identity)
+}

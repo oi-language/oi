@@ -1,0 +1,57 @@
+package report
+
+import "std/diagnostic"
+
+type TestReport struct {
+    Status text
+    Observations []text
+    ForbiddenHits []text
+    Failure diagnostic.Diagnostic?
+}
+
+type CaseResult struct {
+    Index int
+    ID text
+    Passed bool
+    Actual TestReport
+    Differences []text
+}
+
+type BenchmarkReport struct {
+    Passed int
+    Failed int
+    Results []CaseResult
+    Diagnostics []diagnostic.Diagnostic
+}
+
+func FailureCategory(value TestReport) text? {
+    if value.Failure ~= [is present] {
+        return [the exact Category of the present diagnostic {value.Failure}]
+    }
+    return none
+}
+
+func FailureDiagnostics(value TestReport) []diagnostic.Diagnostic {
+    if value.Failure ~= [is present] {
+        return [a one-element slice containing the exact present diagnostic {value.Failure}]
+    }
+    return []diagnostic.Diagnostic{}
+}
+
+func Build(results []CaseResult, diagnostics []diagnostic.Diagnostic) BenchmarkReport {
+    var passed int = 0
+    var failed int = 0
+    for result in results {
+        if result.Passed {
+            passed = passed + 1
+        } else {
+            failed = failed + 1
+        }
+    }
+    return BenchmarkReport{
+        Passed: passed,
+        Failed: failed,
+        Results: results,
+        Diagnostics: diagnostics,
+    }
+}

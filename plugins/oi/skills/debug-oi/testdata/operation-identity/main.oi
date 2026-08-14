@@ -1,0 +1,26 @@
+package main
+
+effect Record(value text) text {
+    uses fixture.record
+    contract [return the deterministic recorded value for {value}]
+}
+
+func Repeat() text {
+    var results []text = []text{}
+    for value in []text{"first", "second"} {
+        results = append(results, Record(value))
+    }
+    return results[1]
+}
+
+func Worker(value text) text {
+    return Record(value)
+}
+
+func main() {
+    var repeated text = Repeat()
+    var first task[text] = oi Worker("left")
+    var second task[text] = oi Worker("right")
+    await first
+    await second
+}

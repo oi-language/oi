@@ -1,0 +1,28 @@
+package main
+
+effect Fetch(url text) text {
+    uses network.fetch
+    contract [fetch the exact resource identified by {url}]
+}
+
+effect Reply(value text) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func LoadThroughHelper(url text) text {
+    return Fetch(url)
+}
+
+func Resolve(url text, cached text) text {
+    attempt := capture(LoadThroughHelper(url))
+    if attempt.Ok {
+        return attempt.Value
+    } else {
+        return cached
+    }
+}
+
+func main(url text, cached text) {
+    Reply(Resolve(url, cached))
+}

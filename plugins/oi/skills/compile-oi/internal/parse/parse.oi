@@ -1,0 +1,55 @@
+package parse
+
+import "std/fs"
+import "oi/skills/compile-oi/internal/model"
+
+func Source(path fs.Path, content text) model.SourceFile {
+    return [the unique model.SourceFile represented by exact Oi 0.0.1 source {content} at {path},
+        containing only source-local facts: package and imports; every ordinary declaration with parameter,
+        result, export, and complete structural type shapes for every Oi 0.0.1 type form, where every type node carries its
+        zero-based element path plus an origin containing the exact introducer or named token, source path, line, column, location,
+        and physical order; anonymous slice, optional, struct, enum, task, outcome, channel, sender, and receiver nodes keep
+        their own token origin, every declaration underlying root has an empty node path, and declaration underlying nodes keep
+        declaration-source origins for later alias expansion and path rebasing at a named use; every type reference with its
+        location; lowercase main entries; unresolved calls with an ID equal to their exact call location, exact callee-token SourcePosition,
+        argument count, known argument shapes
+        or the producer call ID for an exact source-local value flow, result use, and contextual result
+        target shape or target producer-call ID, plus ordered task, await, capture, index, or field result transforms; every effect declaration's
+        ordered `uses` clauses as AuthorityUse values containing the declaration name, exact authority, and authority-token SourcePosition;
+        every `capture(expression)` whose complete expression is one syntactic call emits exactly one OptionalBoundary.DirectCapture containing
+        the lexical caller, the operand CallSite ID, and capture-token SourcePosition; nested calls and effects reached through an ordinary
+        function operand emit no additional boundary, and whether the operand resolves to an effect remains compile work; explicit or
+        implicit conversion target plus a known source shape or
+        source producer-call ID; runtime-handle
+        type uses and their syntactic placement, excluding a direct channel-payload node that the construction already records;
+        each channel construction in ascending physical order with a source-local ID and owner, provenance-bearing structural payload,
+        and its capacity expression's exact token, structured position, compile-time-constant flag, and integer value when constant;
+        every receiver use in owner/function physical order with Create, Direct, Assignment, or Argument kind, owner, source holder,
+        destination holder, structured position, direct-owner, ordinary-function, or attached-oi consumer scope, unresolved consumer target,
+        and zero-based argument index; channel receiver creation emits Create with empty source, its stable receiver identity, and its endpoint as
+        destination; every directly receiver-typed ordinary or attached-oi parameter emits Create at its binding with a stable activation-local
+        identity and the parameter as destination before body uses; direct use has empty destination; assignment moves from its exact right holder to left holder; a receiver argument moves to
+        a stable destination key made only from its exact call ID and argument index after compile resolves that consumer parameter as receiver;
+        every field unused by a use kind is its exact empty or zero value;
+        every `detach oi QualifiedName(arguments)` and `handoff QualifiedName(arguments)` in physical order as one TransferUse,
+        with exact kind, lexical owner, symbolic source owner equal to that owner, TransferDestinationKind.HostRegistry and destination
+        `host/task-registry` for detach, or TransferDestinationKind.NamedActivation and the named target as destination for handoff, exact named
+        target and target token, statement token, and ordered arguments; each transfer argument carries its exact source-local
+        type shape or producer call ID, expression position, and TransferDurability.Durable only for a fully known recursively durable shape,
+        TransferDurability.RuntimeHandle for a source-local task, channel, sender, or receiver occurrence, otherwise
+        TransferDurability.Unresolved; a known handle records its first exact handle-expression token and position as RuntimeHandleOrigin;
+        transfer target calls remain in Calls for ordinary declaration, signature, and reachability resolution, but a handle occurrence represented
+        by a TransferArgument is excluded from RuntimeHandleUses;
+        every call lexically resolved through an exact `std/task` import to `task.Status` or `task.Cancel` as one TaskIntrinsicUse, with its exact
+        kind, lexical owner, qualified target, call ID, source holder, single Argument fact, argument position, call position, and source-local
+        handle owner when that owner is provable from the value flow; these calls remain in Calls, while their handle arguments are excluded
+        from RuntimeHandleUses;
+        shard uses; manifest requirements; and only those
+        parse or type facts decidable without resolving another source, all with exact locations; main is absent
+        from declarations; StaticFacts never contain INVALID_CHANNEL_CAPACITY, RUNTIME_HANDLE_PAYLOAD, RECEIVER_ALREADY_MOVED,
+        ENDPOINT_SCOPE_ESCAPE, INVALID_TASK_OWNER, or UNMAPPED_EFFECT;
+        duplicate, name, call, conversion, handle, transfer-target, transfer-durability, task-intrinsic, receiver-parameter, affine-flow,
+        phase, authority, and shard resolution
+        are not performed here; an argument is unknown with no producer only when it is an untyped literal whose
+        type comes entirely from its resolved consumer parameter];
+}

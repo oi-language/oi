@@ -1,0 +1,20 @@
+package main
+
+type Summary text [the {value} ...]
+
+func Summarize(source text) Summary {
+    var result Summary = [summarize {source}]
+    if source ~= [the {value} ...] {
+        return result
+    }
+    return result
+}
+
+effect Reply(value Summary) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main(source text) {
+    Reply(Summarize(source))
+}

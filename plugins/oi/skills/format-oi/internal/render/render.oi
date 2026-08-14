@@ -1,0 +1,24 @@
+package render
+
+import "oi/skills/format-oi/internal/model"
+
+func Canonical(source model.Source) text {
+    return [the unique UTF-8 text produced from the validated typed tokens of {source} by this closed layout judgment;
+        discard Whitespace and LineBreak tokens and omit Semicolon while preserving its grammar-derived terminator;
+        emit package, each single import, each struct field, enum member, uses clause, contract clause, and simple statement on one line;
+        emit one empty line between top-level declarations, no empty line inside a declaration, and exactly one final LF;
+        before OpenStructuralBrace emit one space, then LF and increase indentation; before CloseStructuralBrace emit LF when needed,
+        decrease indentation, and place it alone except that a following else Keyword uses one space on the same line;
+        indentation is four ASCII spaces times structural plus multiline-list depth and no emitted line has trailing formatting space;
+        OpenCompositeBrace is tight to its type; an empty composite is inline; a composite with at least two elements is multiline;
+        a comma-separated import, parameter, argument, or composite-element list expands exactly when it has at least three elements,
+        its normalized inline form exceeds 100 UTF-8 bytes, or its composite has at least two elements; an expanded or nested-multiline list is multiline;
+        an inline list has no trailing Comma and uses one space after each Comma; an expanded list has one element per indented line,
+        a Comma after every element including the last, and its closing delimiter on the enclosing indentation;
+        an unexpanded list containing one nested multiline element keeps its delimiters attached to that element and adds one trailing Comma;
+        FieldColon and inline CaseColon have no preceding space and one following space; a CaseColon that begins statements is followed by LF;
+        for all remaining adjacent emitted tokens, use exactly model.Adjacency on their TokenKind: Tight emits nothing and Space emits one ASCII space;
+        copy TextLiteral, SemanticLiteral, and Comment Lexeme bytes exactly; leading comments occupy their own line and trailing comments use two spaces,
+        with the physical comment ending normalized to LF; never reorder or reinterpret a non-formatting token;
+        reparsing the result and applying this same judgment emits byte-identical text, including the same multiline decisions and final LF]
+}

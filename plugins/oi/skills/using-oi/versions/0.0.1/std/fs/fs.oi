@@ -1,0 +1,44 @@
+package fs
+
+type Path text [the {value} is a normalized absolute or module-relative path]
+
+type Kind enum { Missing, File, Directory }
+
+type Observation struct {
+    Path Path
+    Kind Kind
+    Entries []Path
+}
+
+type Snapshot struct {
+    Path Path
+    Kind Kind
+    Entries []Path
+    Content text?
+} [the {value} is canonical:
+    Missing has empty Entries and Content none;
+    File has empty Entries and present exact UTF-8 Content, including empty text;
+    Directory has Content none and its possibly empty, duplicate-free direct Entries in unsigned UTF-8 path-byte order]
+
+effect Scan(path Path) Observation {
+    uses workspace.read
+    contract [observe the kind and direct entries of {path} in unsigned UTF-8 path-byte order without reading file contents]
+}
+
+effect Read(path Path) text {
+    uses workspace.read
+    contract [return the exact UTF-8 content of file {path}]
+}
+
+effect Write(path Path, content text) unit {
+    uses workspace.write
+    contract [atomically replace file {path} with exact {content}]
+}
+
+effect WriteIfCurrent(guards []Snapshot, path Path, content text) bool {
+    uses workspace.read, workspace.write
+    contract [at one filesystem linearization point atomically compare every canonical guard, with Paths distinct by value;
+        if all Kind and exact Entries or Content match, atomically replace {path} with exact {content} and return true;
+        if valid guards observe any mismatch, write nothing and return false;
+        an invalid or repeated guard, permission or I/O failure, or replacement failure is an effect failure]
+}

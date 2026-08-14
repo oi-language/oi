@@ -1,0 +1,10 @@
+package main
+type Left text
+type Right text
+func Convert(value Left) Right {
+    return value
+}
+
+func main(value Left) {
+    Convert(value)
+}

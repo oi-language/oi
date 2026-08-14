@@ -1,0 +1,1908 @@
+package main
+
+type ArgumentExpectation struct {
+    Name text
+    Shape text
+    Value text
+}
+
+type EffectMappingExpectation struct {
+    EffectName text
+    Authority text
+}
+
+type LaunchExpectation struct {
+    TaskID text
+    ParentID text
+    SourceIndex int
+    Target text
+    Arguments []ArgumentExpectation
+    Authorities []text
+    EffectMappings []EffectMappingExpectation
+}
+
+type EventKind enum {
+    Admit
+    Queue
+    Suspend
+    Resume
+    Semantic
+    Complete
+    Cancel
+    Effect
+    Reply
+}
+
+type ScheduleEvent struct {
+    Sequence int
+    Kind EventKind
+    TaskID text
+    Location text
+    Value text
+}
+
+type CompletionExpectation struct {
+    TaskID text
+    State text
+    Result text
+    Category text
+    Location text
+    SourceIndex int
+}
+
+type FailureExpectation struct {
+    TaskID text
+    Category text
+    Phase text
+    Location text
+    Detail text
+    Trace []text
+    SourceIndex int
+}
+
+type PolicyExpectation struct {
+    RootDepth int
+    MaxDepth int
+    MaxConcurrency int
+    ExpectedActivePeak int
+    AdmissionOrder text
+    RunCount int
+    RejectedParentID text
+    RejectedSourceIndex int
+    RejectedDepth int
+    Category text
+    Location text
+}
+
+type RuntimeExpectation struct {
+    HarnessInputs []ArgumentExpectation
+    ParentEffectMappings []EffectMappingExpectation
+    Launches []LaunchExpectation
+    Schedule []ScheduleEvent
+    ReplyTrace []ScheduleEvent
+    EffectTrace []ScheduleEvent
+    ContextExcludes []text
+    TraceExcludes []text
+    JournalExcludes []text
+    Completions []CompletionExpectation
+    Failures []FailureExpectation
+    SelectedFailure FailureExpectation?
+    CancelledTaskIDs []text
+    Policy PolicyExpectation?
+    JournalReadCount int
+}
+
+func Arg(name text, shape text, value text) ArgumentExpectation {
+    return ArgumentExpectation{Name: name, Shape: shape, Value: value}
+}
+
+func Mapping(effectName text, authority text) EffectMappingExpectation {
+    return EffectMappingExpectation{EffectName: effectName, Authority: authority}
+}
+
+func Launch(
+    taskID text,
+    parentID text,
+    sourceIndex int,
+    target text,
+    arguments []ArgumentExpectation,
+    authorities []text,
+    mappings []EffectMappingExpectation,
+) LaunchExpectation {
+    return LaunchExpectation{
+        TaskID: taskID,
+        ParentID: parentID,
+        SourceIndex: sourceIndex,
+        Target: target,
+        Arguments: arguments,
+        Authorities: authorities,
+        EffectMappings: mappings,
+    }
+}
+
+func Event(
+    sequence int,
+    kind EventKind,
+    taskID text,
+    location text,
+    value text,
+) ScheduleEvent {
+    return ScheduleEvent{
+        Sequence: sequence,
+        Kind: kind,
+        TaskID: taskID,
+        Location: location,
+        Value: value,
+    }
+}
+
+func Completion(
+    taskID text,
+    state text,
+    result text,
+    category text,
+    location text,
+    sourceIndex int,
+) CompletionExpectation {
+    return CompletionExpectation{
+        TaskID: taskID,
+        State: state,
+        Result: result,
+        Category: category,
+        Location: location,
+        SourceIndex: sourceIndex,
+    }
+}
+
+func OiContinueRuntime() RuntimeExpectation {
+    var reply ScheduleEvent = Event(6, EventKind.Reply, "root", "main.oi:20:5", "combined-7")
+    return RuntimeExpectation{
+        HarnessInputs: []ArgumentExpectation{
+            Arg("change", "text", "change-7"),
+            Arg("document", "text", "document-7"),
+        },
+        ParentEffectMappings: []EffectMappingExpectation{Mapping("Reply", "caller.reply")},
+        Launches: []LaunchExpectation{
+            Launch(
+                "root/0",
+                "root",
+                0,
+                "main.Review",
+                []ArgumentExpectation{Arg("change", "text", "change-7")},
+                []text{},
+                []EffectMappingExpectation{},
+            ),
+        },
+        Schedule: []ScheduleEvent{
+            Event(1, EventKind.Admit, "root/0", "main.oi:17:15", ""),
+            Event(2, EventKind.Semantic, "root", "main.oi:18:24", "summary-7"),
+            Event(3, EventKind.Semantic, "root/0", "main.oi:8:12", "review-7"),
+            Event(4, EventKind.Complete, "root/0", "main.oi:8:12", "review-7"),
+            Event(5, EventKind.Semantic, "root", "main.oi:4:12", "combined-7"),
+            reply,
+        },
+        ReplyTrace: []ScheduleEvent{reply},
+        EffectTrace: []ScheduleEvent{},
+        ContextExcludes: []text{},
+        TraceExcludes: []text{},
+        JournalExcludes: []text{},
+        Completions: []CompletionExpectation{
+            Completion("root/0", "success", "review-7", "none", "main.oi:8:12", 0),
+        },
+        Failures: []FailureExpectation{},
+        SelectedFailure: none,
+        CancelledTaskIDs: []text{},
+        Policy: none,
+        JournalReadCount: 1,
+    }
+}
+
+func OiDiscardRuntime() RuntimeExpectation {
+    var parentTrace ScheduleEvent = Event(
+        2,
+        EventKind.Effect,
+        "root",
+        "main.oi:20:5",
+        "ParentTrace:parent",
+    )
+    var childTrace ScheduleEvent = Event(
+        3,
+        EventKind.Effect,
+        "root/0",
+        "main.oi:14:5",
+        "ChildTrace:change-7",
+    )
+    return RuntimeExpectation{
+        HarnessInputs: []ArgumentExpectation{Arg("change", "text", "change-7")},
+        ParentEffectMappings: []EffectMappingExpectation{
+            Mapping("ChildTrace", "caller.child-trace"),
+            Mapping("ParentTrace", "caller.parent-trace"),
+        },
+        Launches: []LaunchExpectation{
+            Launch(
+                "root/0",
+                "root",
+                0,
+                "main.Review",
+                []ArgumentExpectation{Arg("change", "text", "change-7")},
+                []text{"caller.child-trace"},
+                []EffectMappingExpectation{Mapping("ChildTrace", "caller.child-trace")},
+            ),
+        },
+        Schedule: []ScheduleEvent{
+            Event(1, EventKind.Admit, "root/0", "main.oi:19:5", ""),
+            parentTrace,
+            childTrace,
+            Event(4, EventKind.Semantic, "root/0", "main.oi:15:12", "review-7"),
+            Event(5, EventKind.Complete, "root/0", "main.oi:15:12", "review-7"),
+        },
+        ReplyTrace: []ScheduleEvent{},
+        EffectTrace: []ScheduleEvent{parentTrace, childTrace},
+        ContextExcludes: []text{"ParentTrace", "caller.parent-trace"},
+        TraceExcludes: []text{},
+        JournalExcludes: []text{},
+        Completions: []CompletionExpectation{
+            Completion("root/0", "success", "review-7", "none", "main.oi:15:12", 0),
+        },
+        Failures: []FailureExpectation{},
+        SelectedFailure: none,
+        CancelledTaskIDs: []text{},
+        Policy: none,
+        JournalReadCount: 1,
+    }
+}
+
+func AwaitImmediateRuntime() RuntimeExpectation {
+    var reply ScheduleEvent = Event(7, EventKind.Reply, "root", "main.oi:15:5", "review-second")
+    return RuntimeExpectation{
+        HarnessInputs: []ArgumentExpectation{Arg("change", "text", "change-7")},
+        ParentEffectMappings: []EffectMappingExpectation{Mapping("Reply", "caller.reply")},
+        Launches: []LaunchExpectation{
+            Launch(
+                "root/0",
+                "root",
+                0,
+                "main.Review",
+                []ArgumentExpectation{Arg("change", "text", "change-7")},
+                []text{},
+                []EffectMappingExpectation{},
+            ),
+            Launch(
+                "root/1",
+                "root",
+                1,
+                "main.Review",
+                []ArgumentExpectation{Arg("change", "text", "change-7")},
+                []text{},
+                []EffectMappingExpectation{},
+            ),
+        },
+        Schedule: []ScheduleEvent{
+            Event(1, EventKind.Admit, "root/0", "main.oi:13:11", ""),
+            Event(2, EventKind.Semantic, "root/0", "main.oi:4:12", "review-first"),
+            Event(3, EventKind.Complete, "root/0", "main.oi:4:12", "review-first"),
+            Event(4, EventKind.Admit, "root/1", "main.oi:14:21", ""),
+            Event(5, EventKind.Semantic, "root/1", "main.oi:4:12", "review-second"),
+            Event(6, EventKind.Complete, "root/1", "main.oi:4:12", "review-second"),
+            reply,
+        },
+        ReplyTrace: []ScheduleEvent{reply},
+        EffectTrace: []ScheduleEvent{},
+        ContextExcludes: []text{},
+        TraceExcludes: []text{},
+        JournalExcludes: []text{},
+        Completions: []CompletionExpectation{
+            Completion("root/0", "success", "review-first", "none", "main.oi:4:12", 0),
+            Completion("root/1", "success", "review-second", "none", "main.oi:4:12", 1),
+        },
+        Failures: []FailureExpectation{},
+        SelectedFailure: none,
+        CancelledTaskIDs: []text{},
+        Policy: none,
+        JournalReadCount: 2,
+    }
+}
+
+func FailureOrderRuntime() RuntimeExpectation {
+    return RuntimeExpectation{
+        HarnessInputs: []ArgumentExpectation{Arg("change", "text", "change-7")},
+        ParentEffectMappings: []EffectMappingExpectation{},
+        Launches: []LaunchExpectation{
+            Launch(
+                "root/0",
+                "root",
+                0,
+                "main.SlowFailure",
+                []ArgumentExpectation{Arg("change", "text", "change-7")},
+                []text{},
+                []EffectMappingExpectation{},
+            ),
+            Launch(
+                "root/1",
+                "root",
+                1,
+                "main.FastFailure",
+                []ArgumentExpectation{Arg("change", "text", "change-7")},
+                []text{},
+                []EffectMappingExpectation{},
+            ),
+        },
+        Schedule: []ScheduleEvent{
+            Event(1, EventKind.Admit, "root/0", "main.oi:14:5", ""),
+            Event(2, EventKind.Admit, "root/1", "main.oi:15:5", ""),
+            Event(3, EventKind.Complete, "root/1", "main.oi:10:5", "HIGHER_SOURCE_FAILURE"),
+            Event(4, EventKind.Semantic, "root/0", "main.oi:4:25", "prepared-7"),
+            Event(5, EventKind.Semantic, "root/0", "main.oi:5:24", "checked-7"),
+            Event(6, EventKind.Complete, "root/0", "main.oi:6:5", "LOWER_SOURCE_FAILURE"),
+        },
+        ReplyTrace: []ScheduleEvent{},
+        EffectTrace: []ScheduleEvent{},
+        ContextExcludes: []text{},
+        TraceExcludes: []text{},
+        JournalExcludes: []text{},
+        Completions: []CompletionExpectation{
+            Completion("root/1", "failure", "", "HIGHER_SOURCE_FAILURE", "main.oi:10:5", 1),
+            Completion("root/0", "failure", "", "LOWER_SOURCE_FAILURE", "main.oi:6:5", 0),
+        },
+        Failures: []FailureExpectation{
+            FailureExpectation{
+                TaskID: "root/1",
+                Category: "HIGHER_SOURCE_FAILURE",
+                Phase: "runtime",
+                Location: "main.oi:10:5",
+                Detail: "change-7",
+                Trace: []text{},
+                SourceIndex: 1,
+            },
+            FailureExpectation{
+                TaskID: "root/0",
+                Category: "LOWER_SOURCE_FAILURE",
+                Phase: "runtime",
+                Location: "main.oi:6:5",
+                Detail: "checked-7",
+                Trace: []text{},
+                SourceIndex: 0,
+            },
+        },
+        SelectedFailure: FailureExpectation{
+            TaskID: "root/0",
+            Category: "LOWER_SOURCE_FAILURE",
+            Phase: "runtime",
+            Location: "main.oi:6:5",
+            Detail: "checked-7",
+            Trace: []text{"implicit-join@main.oi:16:1"},
+            SourceIndex: 0,
+        },
+        CancelledTaskIDs: []text{},
+        Policy: none,
+        JournalReadCount: 2,
+    }
+}
+
+func CancellationRuntime() RuntimeExpectation {
+    return RuntimeExpectation{
+        HarnessInputs: []ArgumentExpectation{Arg("change", "text", "change-7")},
+        ParentEffectMappings: []EffectMappingExpectation{},
+        Launches: []LaunchExpectation{
+            Launch(
+                "root/0",
+                "root",
+                0,
+                "main.ImmediateFailure",
+                []ArgumentExpectation{Arg("change", "text", "change-7")},
+                []text{},
+                []EffectMappingExpectation{},
+            ),
+            Launch(
+                "root/1",
+                "root",
+                1,
+                "main.SlowWork",
+                []ArgumentExpectation{Arg("change", "text", "change-7")},
+                []text{},
+                []EffectMappingExpectation{},
+            ),
+        },
+        Schedule: []ScheduleEvent{
+            Event(1, EventKind.Admit, "root/0", "main.oi:14:5", ""),
+            Event(2, EventKind.Admit, "root/1", "main.oi:15:5", ""),
+            Event(3, EventKind.Complete, "root/0", "main.oi:4:5", "CANCEL_SOURCE_FAILURE"),
+            Event(4, EventKind.Cancel, "root/1", "main.oi:15:5", "TASK_CANCELLED"),
+        },
+        ReplyTrace: []ScheduleEvent{},
+        EffectTrace: []ScheduleEvent{},
+        ContextExcludes: []text{},
+        TraceExcludes: []text{},
+        JournalExcludes: []text{},
+        Completions: []CompletionExpectation{
+            Completion("root/0", "failure", "", "CANCEL_SOURCE_FAILURE", "main.oi:4:5", 0),
+            Completion("root/1", "cancelled", "", "TASK_CANCELLED", "main.oi:15:5", 1),
+        },
+        Failures: []FailureExpectation{
+            FailureExpectation{
+                TaskID: "root/0",
+                Category: "CANCEL_SOURCE_FAILURE",
+                Phase: "runtime",
+                Location: "main.oi:4:5",
+                Detail: "change-7",
+                Trace: []text{},
+                SourceIndex: 0,
+            },
+            FailureExpectation{
+                TaskID: "root/1",
+                Category: "TASK_CANCELLED",
+                Phase: "runtime",
+                Location: "main.oi:15:5",
+                Detail: "cancelled by root",
+                Trace: []text{"cancel@main.oi:16:1"},
+                SourceIndex: 1,
+            },
+        },
+        SelectedFailure: FailureExpectation{
+            TaskID: "root/0",
+            Category: "CANCEL_SOURCE_FAILURE",
+            Phase: "runtime",
+            Location: "main.oi:4:5",
+            Detail: "change-7",
+            Trace: []text{"implicit-join@main.oi:16:1"},
+            SourceIndex: 0,
+        },
+        CancelledTaskIDs: []text{"root/1"},
+        Policy: none,
+        JournalReadCount: 1,
+    }
+}
+
+func IsolationRuntime() RuntimeExpectation {
+    var reply ScheduleEvent = Event(6, EventKind.Reply, "root", "main.oi:19:5", "child-safe")
+    return RuntimeExpectation{
+        HarnessInputs: []ArgumentExpectation{
+            Arg("change", "text", "delta"),
+            Arg("sentinel", "text", "PARENT-ONLY-7F3A"),
+        },
+        ParentEffectMappings: []EffectMappingExpectation{Mapping("Reply", "caller.reply")},
+        Launches: []LaunchExpectation{
+            Launch(
+                "root/0",
+                "root",
+                0,
+                "main.Inspect",
+                []ArgumentExpectation{Arg("change", "text", "delta")},
+                []text{},
+                []EffectMappingExpectation{},
+            ),
+        },
+        Schedule: []ScheduleEvent{
+            Event(1, EventKind.Admit, "root/0", "main.oi:14:21", ""),
+            Event(2, EventKind.Suspend, "root", "main.oi:14:15", "root-excluded"),
+            Event(3, EventKind.Semantic, "root/0", "main.oi:4:12", "child-safe"),
+            Event(4, EventKind.Complete, "root/0", "main.oi:4:12", "child-safe"),
+            Event(5, EventKind.Resume, "root", "main.oi:14:15", "root-excluded"),
+            reply,
+        },
+        ReplyTrace: []ScheduleEvent{reply},
+        EffectTrace: []ScheduleEvent{},
+        ContextExcludes: []text{
+            "PARENT-ONLY-7F3A",
+            "parent-conversation",
+            "parent-locals",
+            "parent-tool-output",
+            "implicit-memory",
+            "parent-trace",
+            "parent-journal",
+        },
+        TraceExcludes: []text{
+            "PARENT-ONLY-7F3A",
+            "parent-conversation",
+            "parent-locals",
+            "parent-tool-output",
+            "implicit-memory",
+            "parent-trace",
+            "parent-journal",
+        },
+        JournalExcludes: []text{"PARENT-ONLY-7F3A"},
+        Completions: []CompletionExpectation{
+            Completion("root/0", "success", "child-safe", "none", "main.oi:4:12", 0),
+        },
+        Failures: []FailureExpectation{},
+        SelectedFailure: none,
+        CancelledTaskIDs: []text{},
+        Policy: none,
+        JournalReadCount: 1,
+    }
+}
+
+func TaskPolicyRuntime() RuntimeExpectation {
+    return RuntimeExpectation{
+        HarnessInputs: []ArgumentExpectation{},
+        ParentEffectMappings: []EffectMappingExpectation{},
+        Launches: []LaunchExpectation{
+            Launch(
+                "root/0",
+                "root",
+                0,
+                "main.Recurse",
+                []ArgumentExpectation{Arg("level", "int", "0")},
+                []text{},
+                []EffectMappingExpectation{},
+            ),
+            Launch(
+                "root/0/0",
+                "root/0",
+                0,
+                "main.Recurse",
+                []ArgumentExpectation{Arg("level", "int", "1")},
+                []text{},
+                []EffectMappingExpectation{},
+            ),
+        },
+        Schedule: []ScheduleEvent{
+            Event(1, EventKind.Admit, "root/0", "main.oi:9:11", "depth=1"),
+            Event(2, EventKind.Suspend, "root", "main.oi:9:5", "root-excluded"),
+            Event(3, EventKind.Admit, "root/0/0", "main.oi:4:14", "depth=2"),
+            Event(4, EventKind.Suspend, "root/0", "main.oi:5:5", "release-slot"),
+            Event(5, EventKind.Complete, "root/0/0", "main.oi:4:14", "TASK_DEPTH_LIMIT depth=3"),
+            Event(6, EventKind.Queue, "root/0", "main.oi:5:5", "resume-ready"),
+            Event(7, EventKind.Resume, "root/0", "main.oi:5:5", "TASK_DEPTH_LIMIT"),
+            Event(8, EventKind.Complete, "root/0", "main.oi:4:14", "TASK_DEPTH_LIMIT depth=3"),
+            Event(9, EventKind.Resume, "root", "main.oi:9:5", "root-excluded"),
+        },
+        ReplyTrace: []ScheduleEvent{},
+        EffectTrace: []ScheduleEvent{},
+        ContextExcludes: []text{},
+        TraceExcludes: []text{},
+        JournalExcludes: []text{},
+        Completions: []CompletionExpectation{
+            Completion("root/0/0", "failure", "", "TASK_DEPTH_LIMIT", "main.oi:4:14", 0),
+            Completion("root/0", "failure", "", "TASK_DEPTH_LIMIT", "main.oi:4:14", 0),
+        },
+        Failures: []FailureExpectation{
+            FailureExpectation{
+                TaskID: "root/0/0",
+                Category: "TASK_DEPTH_LIMIT",
+                Phase: "runtime",
+                Location: "main.oi:4:14",
+                Detail: "child depth 3 exceeds maximum 2",
+                Trace: []text{},
+                SourceIndex: 0,
+            },
+            FailureExpectation{
+                TaskID: "root/0",
+                Category: "TASK_DEPTH_LIMIT",
+                Phase: "runtime",
+                Location: "main.oi:4:14",
+                Detail: "child depth 3 exceeds maximum 2",
+                Trace: []text{"await@main.oi:5:5"},
+                SourceIndex: 0,
+            },
+        },
+        SelectedFailure: FailureExpectation{
+            TaskID: "root/0/0",
+            Category: "TASK_DEPTH_LIMIT",
+            Phase: "runtime",
+            Location: "main.oi:4:14",
+            Detail: "child depth 3 exceeds maximum 2",
+            Trace: []text{"await@main.oi:5:5", "await@main.oi:9:5"},
+            SourceIndex: 0,
+        },
+        CancelledTaskIDs: []text{},
+        Policy: PolicyExpectation{
+            RootDepth: 0,
+            MaxDepth: 2,
+            MaxConcurrency: 2,
+            ExpectedActivePeak: 2,
+            AdmissionOrder: "TaskID UTF-8 bytes, ParentID UTF-8 bytes, SourceIndex, launch before resume",
+            RunCount: 2,
+            RejectedParentID: "root/0/0",
+            RejectedSourceIndex: 0,
+            RejectedDepth: 3,
+            Category: "TASK_DEPTH_LIMIT",
+            Location: "main.oi:4:14",
+        },
+        JournalReadCount: 2,
+    }
+}
+
+func CapacityPressureRuntime() RuntimeExpectation {
+    var reply ScheduleEvent = Event(12, EventKind.Reply, "root", "main.oi:19:5", "grandchild-pressure-7")
+    return RuntimeExpectation{
+        HarnessInputs: []ArgumentExpectation{},
+        ParentEffectMappings: []EffectMappingExpectation{Mapping("Reply", "caller.reply")},
+        Launches: []LaunchExpectation{
+            Launch(
+                "root/0",
+                "root",
+                0,
+                "main.Child",
+                []ArgumentExpectation{Arg("value", "text", "pressure-7")},
+                []text{},
+                []EffectMappingExpectation{},
+            ),
+            Launch(
+                "root/0/0",
+                "root/0",
+                0,
+                "main.Grandchild",
+                []ArgumentExpectation{Arg("value", "text", "pressure-7")},
+                []text{},
+                []EffectMappingExpectation{},
+            ),
+        },
+        Schedule: []ScheduleEvent{
+            Event(1, EventKind.Admit, "root/0", "main.oi:18:21", "launch"),
+            Event(2, EventKind.Suspend, "root", "main.oi:18:15", "root-excluded"),
+            Event(3, EventKind.Queue, "root/0/0", "main.oi:8:19", "capacity"),
+            Event(4, EventKind.Suspend, "root/0", "main.oi:9:12", "release-slot"),
+            Event(5, EventKind.Admit, "root/0/0", "main.oi:8:19", "launch"),
+            Event(6, EventKind.Semantic, "root/0/0", "main.oi:4:12", "grandchild-pressure-7"),
+            Event(7, EventKind.Complete, "root/0/0", "main.oi:4:12", "grandchild-pressure-7"),
+            Event(8, EventKind.Queue, "root/0", "main.oi:9:12", "resume-ready"),
+            Event(9, EventKind.Resume, "root/0", "main.oi:9:12", "admitted"),
+            Event(10, EventKind.Complete, "root/0", "main.oi:9:12", "grandchild-pressure-7"),
+            Event(11, EventKind.Resume, "root", "main.oi:18:15", "root-excluded"),
+            reply,
+        },
+        ReplyTrace: []ScheduleEvent{reply},
+        EffectTrace: []ScheduleEvent{},
+        ContextExcludes: []text{},
+        TraceExcludes: []text{},
+        JournalExcludes: []text{},
+        Completions: []CompletionExpectation{
+            Completion("root/0/0", "success", "grandchild-pressure-7", "none", "main.oi:4:12", 0),
+            Completion("root/0", "success", "grandchild-pressure-7", "none", "main.oi:9:12", 0),
+        },
+        Failures: []FailureExpectation{},
+        SelectedFailure: none,
+        CancelledTaskIDs: []text{},
+        Policy: PolicyExpectation{
+            RootDepth: 0,
+            MaxDepth: 2,
+            MaxConcurrency: 1,
+            ExpectedActivePeak: 1,
+            AdmissionOrder: "TaskID UTF-8 bytes, ParentID UTF-8 bytes, SourceIndex, launch before resume",
+            RunCount: 2,
+            RejectedParentID: "none",
+            RejectedSourceIndex: 0,
+            RejectedDepth: 0,
+            Category: "none",
+            Location: "none",
+        },
+        JournalReadCount: 2,
+    }
+}
+
+type ChannelEventKind enum {
+    Create
+    SenderCopy
+    ReceiverMove
+    Send
+    Receive
+    SendBlocked
+    CancelWake
+    End
+}
+
+type SelectChoiceKind enum {
+    Send
+    Receive
+    Await
+    Default
+}
+
+type ChannelExpectation struct {
+    ChannelID text
+    OwnerScope text
+    PayloadShape text
+    Capacity int
+    SenderIDs []text
+    ReceiverID text
+    EndsAtOwnerScope bool
+}
+
+type ChannelEventExpectation struct {
+    Sequence int
+    Kind ChannelEventKind
+    ChannelID text
+    TaskID text
+    EndpointID text
+    MessageID text
+    Location text
+    Value text
+}
+
+type SelectExpectation struct {
+    Sequence int
+    SelectID text
+    Location text
+    ChosenCase int
+    Kind SelectChoiceKind
+    ReferenceID text
+    ReadySequence int
+    PersistedBeforeBranch bool
+    RecordCount int
+    ReplayReadCount int
+}
+
+type DeadlockExpectation struct {
+    Category text
+    Phase text
+    Location text
+    Detail text
+    BlockedTaskIDs []text
+    BlockedOperations []text
+    RunnableTaskCount int
+    ExternalWakeCount int
+}
+
+type ChannelRuntimeExpectation struct {
+    Runtime RuntimeExpectation
+    Channels []ChannelExpectation
+    ChannelEvents []ChannelEventExpectation
+    Selects []SelectExpectation
+    Observations []text
+    RunCount int
+    ReplayCount int
+    InterruptAfterSequence int?
+    Deadlock DeadlockExpectation?
+}
+
+func ChannelSpec(
+    channelID text,
+    ownerScope text,
+    payloadShape text,
+    capacity int,
+    senderIDs []text,
+    receiverID text,
+) ChannelExpectation {
+    return ChannelExpectation{
+        ChannelID: channelID,
+        OwnerScope: ownerScope,
+        PayloadShape: payloadShape,
+        Capacity: capacity,
+        SenderIDs: senderIDs,
+        ReceiverID: receiverID,
+        EndsAtOwnerScope: true,
+    }
+}
+
+func ChannelEvent(
+    sequence int,
+    kind ChannelEventKind,
+    channelID text,
+    taskID text,
+    endpointID text,
+    messageID text,
+    location text,
+    value text,
+) ChannelEventExpectation {
+    return ChannelEventExpectation{
+        Sequence: sequence,
+        Kind: kind,
+        ChannelID: channelID,
+        TaskID: taskID,
+        EndpointID: endpointID,
+        MessageID: messageID,
+        Location: location,
+        Value: value,
+    }
+}
+
+func SelectRecord(
+    sequence int,
+    selectID text,
+    location text,
+    chosenCase int,
+    kind SelectChoiceKind,
+    referenceID text,
+    readySequence int,
+    replayReadCount int,
+) SelectExpectation {
+    return SelectExpectation{
+        Sequence: sequence,
+        SelectID: selectID,
+        Location: location,
+        ChosenCase: chosenCase,
+        Kind: kind,
+        ReferenceID: referenceID,
+        ReadySequence: readySequence,
+        PersistedBeforeBranch: true,
+        RecordCount: 1,
+        ReplayReadCount: replayReadCount,
+    }
+}
+
+func ChannelProgressRuntime() ChannelRuntimeExpectation {
+    var reply ScheduleEvent = Event(12, EventKind.Reply, "root", "main.oi:32:13", "combined-7")
+    return ChannelRuntimeExpectation{
+        Runtime: RuntimeExpectation{
+            HarnessInputs: []ArgumentExpectation{
+                Arg("change", "text", "change-7"),
+                Arg("document", "text", "document-7"),
+            },
+            ParentEffectMappings: []EffectMappingExpectation{Mapping("Reply", "caller.reply")},
+            Launches: []LaunchExpectation{
+                Launch(
+                    "root/0",
+                    "root",
+                    0,
+                    "main.Review",
+                    []ArgumentExpectation{
+                        Arg("change", "text", "change-7"),
+                        Arg("updates", "sender[main.Progress]", "root/a0/c0/s1"),
+                    },
+                    []text{},
+                    []EffectMappingExpectation{},
+                ),
+            },
+            Schedule: []ScheduleEvent{
+                Event(3, EventKind.Admit, "root/0", "main.oi:24:15", ""),
+                Event(4, EventKind.Semantic, "root", "main.oi:25:24", "summary-7"),
+                Event(8, EventKind.Semantic, "root/0", "main.oi:14:12", "review-7"),
+                Event(9, EventKind.Complete, "root/0", "main.oi:14:12", "review-7"),
+                Event(11, EventKind.Semantic, "root", "main.oi:9:12", "combined-7"),
+                reply,
+            },
+            ReplyTrace: []ScheduleEvent{reply},
+            EffectTrace: []ScheduleEvent{},
+            ContextExcludes: []text{},
+            TraceExcludes: []text{},
+            JournalExcludes: []text{},
+            Completions: []CompletionExpectation{
+                Completion("root/0", "success", "review-7", "none", "main.oi:14:12", 0),
+            },
+            Failures: []FailureExpectation{},
+            SelectedFailure: none,
+            CancelledTaskIDs: []text{},
+            Policy: none,
+            JournalReadCount: 1,
+        },
+        Channels: []ChannelExpectation{
+            ChannelSpec(
+                "root/a0/c0",
+                "root/a0",
+                "main.Progress",
+                8,
+                []text{"root/a0/c0/s0", "root/a0/c0/s1"},
+                "root/a0/c0/r0",
+            ),
+        },
+        ChannelEvents: []ChannelEventExpectation{
+            ChannelEvent(1, ChannelEventKind.Create, "root/a0/c0", "root", "", "", "main.oi:23:16", "capacity=8"),
+            ChannelEvent(2, ChannelEventKind.SenderCopy, "root/a0/c0", "root", "root/a0/c0/s1", "", "main.oi:24:33", ""),
+            ChannelEvent(5, ChannelEventKind.Send, "root/a0/c0", "root/0", "root/a0/c0/s1", "root/a0/c0/m0", "main.oi:13:5", "Progress{scan,1}"),
+            ChannelEvent(6, ChannelEventKind.Receive, "root/a0/c0", "root", "root/a0/c0/r0", "root/a0/c0/m0", "main.oi:29:24", "Progress{scan,1}"),
+        },
+        Selects: []SelectExpectation{
+            SelectRecord(7, "root/a0/select0", "main.oi:28:9", 0, SelectChoiceKind.Receive, "root/a0/c0/m0", 5, 0),
+            SelectRecord(10, "root/a0/select1", "main.oi:28:9", 1, SelectChoiceKind.Await, "root/0", 9, 0),
+        },
+        Observations: []text{"Progress{scan,1}", "combined-7"},
+        RunCount: 1,
+        ReplayCount: 0,
+        InterruptAfterSequence: none,
+        Deadlock: none,
+    }
+}
+
+func ChannelCommandRuntime() ChannelRuntimeExpectation {
+    var reply ScheduleEvent = Event(7, EventKind.Reply, "root", "main.oi:27:5", "stopped")
+    return ChannelRuntimeExpectation{
+        Runtime: RuntimeExpectation{
+            HarnessInputs: []ArgumentExpectation{},
+            ParentEffectMappings: []EffectMappingExpectation{Mapping("Reply", "caller.reply")},
+            Launches: []LaunchExpectation{
+                Launch(
+                    "root/0",
+                    "root",
+                    0,
+                    "main.Worker",
+                    []ArgumentExpectation{Arg("commands", "receiver[main.Command]", "root/a0/c0/r0")},
+                    []text{},
+                    []EffectMappingExpectation{},
+                ),
+            },
+            Schedule: []ScheduleEvent{
+                Event(3, EventKind.Admit, "root/0", "main.oi:25:15", ""),
+                Event(6, EventKind.Complete, "root/0", "main.oi:12:12", "stopped"),
+                reply,
+            },
+            ReplyTrace: []ScheduleEvent{reply},
+            EffectTrace: []ScheduleEvent{},
+            ContextExcludes: []text{},
+            TraceExcludes: []text{},
+            JournalExcludes: []text{},
+            Completions: []CompletionExpectation{
+                Completion("root/0", "success", "stopped", "none", "main.oi:12:12", 0),
+            },
+            Failures: []FailureExpectation{},
+            SelectedFailure: none,
+            CancelledTaskIDs: []text{},
+            Policy: none,
+            JournalReadCount: 1,
+        },
+        Channels: []ChannelExpectation{
+            ChannelSpec(
+                "root/a0/c0",
+                "root/a0",
+                "main.Command",
+                1,
+                []text{"root/a0/c0/s0"},
+                "root/a0/c0/r0",
+            ),
+        },
+        ChannelEvents: []ChannelEventExpectation{
+            ChannelEvent(1, ChannelEventKind.Create, "root/a0/c0", "root", "", "", "main.oi:24:17", "capacity=1"),
+            ChannelEvent(2, ChannelEventKind.ReceiverMove, "root/a0/c0", "root/0", "root/a0/c0/r0", "", "main.oi:25:25", ""),
+            ChannelEvent(4, ChannelEventKind.Send, "root/a0/c0", "root", "root/a0/c0/s0", "root/a0/c0/m0", "main.oi:26:5", "Command.Stop"),
+            ChannelEvent(5, ChannelEventKind.Receive, "root/a0/c0", "root/0", "root/a0/c0/r0", "root/a0/c0/m0", "main.oi:9:16", "Command.Stop"),
+        },
+        Selects: []SelectExpectation{},
+        Observations: []text{"stopped"},
+        RunCount: 1,
+        ReplayCount: 0,
+        InterruptAfterSequence: none,
+        Deadlock: none,
+    }
+}
+
+func SelectReplayRuntime() ChannelRuntimeExpectation {
+    var reply ScheduleEvent = Event(7, EventKind.Reply, "root", "main.oi:20:5", "second-7")
+    return ChannelRuntimeExpectation{
+        Runtime: RuntimeExpectation{
+            HarnessInputs: []ArgumentExpectation{},
+            ParentEffectMappings: []EffectMappingExpectation{Mapping("Reply", "caller.reply")},
+            Launches: []LaunchExpectation{},
+            Schedule: []ScheduleEvent{reply},
+            ReplyTrace: []ScheduleEvent{reply},
+            EffectTrace: []ScheduleEvent{},
+            ContextExcludes: []text{},
+            TraceExcludes: []text{},
+            JournalExcludes: []text{},
+            Completions: []CompletionExpectation{},
+            Failures: []FailureExpectation{},
+            SelectedFailure: none,
+            CancelledTaskIDs: []text{},
+            Policy: none,
+            JournalReadCount: 1,
+        },
+        Channels: []ChannelExpectation{
+            ChannelSpec("root/a0/c0", "root/a0", "text", 1, []text{"root/a0/c0/s0"}, "root/a0/c0/r0"),
+            ChannelSpec("root/a0/c1", "root/a0", "text", 1, []text{"root/a0/c1/s0"}, "root/a0/c1/r0"),
+        },
+        ChannelEvents: []ChannelEventExpectation{
+            ChannelEvent(1, ChannelEventKind.Create, "root/a0/c0", "root", "", "", "main.oi:9:14", "capacity=1"),
+            ChannelEvent(2, ChannelEventKind.Create, "root/a0/c1", "root", "", "", "main.oi:10:15", "capacity=1"),
+            ChannelEvent(3, ChannelEventKind.Send, "root/a0/c1", "root", "root/a0/c1/s0", "root/a0/c1/m0", "main.oi:11:5", "second-7"),
+            ChannelEvent(4, ChannelEventKind.Send, "root/a0/c0", "root", "root/a0/c0/s0", "root/a0/c0/m0", "main.oi:12:5", "first-7"),
+            ChannelEvent(5, ChannelEventKind.Receive, "root/a0/c1", "root", "root/a0/c1/r0", "root/a0/c1/m0", "main.oi:17:19", "second-7"),
+        },
+        Selects: []SelectExpectation{
+            SelectRecord(6, "root/a0/select0", "main.oi:14:5", 1, SelectChoiceKind.Receive, "root/a0/c1/m0", 3, 1),
+        },
+        Observations: []text{"second-7", "second-7"},
+        RunCount: 2,
+        ReplayCount: 1,
+        InterruptAfterSequence: 6,
+        Deadlock: none,
+    }
+}
+
+func SelectSendDefaultRuntime() ChannelRuntimeExpectation {
+    var reply ScheduleEvent = Event(13, EventKind.Reply, "root", "main.oi:30:5", "[default,sent]")
+    return ChannelRuntimeExpectation{
+        Runtime: RuntimeExpectation{
+            HarnessInputs: []ArgumentExpectation{},
+            ParentEffectMappings: []EffectMappingExpectation{Mapping("Reply", "caller.reply")},
+            Launches: []LaunchExpectation{
+                Launch(
+                    "root/0",
+                    "root",
+                    0,
+                    "main.Relay",
+                    []ArgumentExpectation{
+                        Arg("input", "receiver[text]", "root/a0/c0/r0"),
+                        Arg("acknowledgements", "sender[text]", "root/a0/c1/s1"),
+                    },
+                    []text{},
+                    []EffectMappingExpectation{},
+                ),
+            },
+            Schedule: []ScheduleEvent{
+                Event(6, EventKind.Admit, "root/0", "main.oi:23:15", ""),
+                Event(11, EventKind.Complete, "root/0", "main.oi:6:1", "unit"),
+                reply,
+            },
+            ReplyTrace: []ScheduleEvent{reply},
+            EffectTrace: []ScheduleEvent{},
+            ContextExcludes: []text{},
+            TraceExcludes: []text{},
+            JournalExcludes: []text{},
+            Completions: []CompletionExpectation{
+                Completion("root/0", "success", "unit", "none", "main.oi:6:1", 0),
+            },
+            Failures: []FailureExpectation{},
+            SelectedFailure: none,
+            CancelledTaskIDs: []text{},
+            Policy: none,
+            JournalReadCount: 1,
+        },
+        Channels: []ChannelExpectation{
+            ChannelSpec("root/a0/c0", "root/a0", "text", 1, []text{"root/a0/c0/s0"}, "root/a0/c0/r0"),
+            ChannelSpec(
+                "root/a0/c1",
+                "root/a0",
+                "text",
+                1,
+                []text{"root/a0/c1/s0", "root/a0/c1/s1"},
+                "root/a0/c1/r0",
+            ),
+        },
+        ChannelEvents: []ChannelEventExpectation{
+            ChannelEvent(1, ChannelEventKind.Create, "root/a0/c0", "root", "", "", "main.oi:14:17", "capacity=1"),
+            ChannelEvent(2, ChannelEventKind.Create, "root/a0/c1", "root", "", "", "main.oi:15:25", "capacity=1"),
+            ChannelEvent(4, ChannelEventKind.ReceiverMove, "root/a0/c0", "root/0", "root/a0/c0/r0", "", "main.oi:23:24", ""),
+            ChannelEvent(5, ChannelEventKind.SenderCopy, "root/a0/c1", "root", "root/a0/c1/s1", "", "main.oi:23:42", ""),
+            ChannelEvent(7, ChannelEventKind.Send, "root/a0/c0", "root", "root/a0/c0/s0", "root/a0/c0/m0", "main.oi:25:10", "ready"),
+            ChannelEvent(9, ChannelEventKind.Receive, "root/a0/c0", "root/0", "root/a0/c0/r0", "root/a0/c0/m0", "main.oi:4:14", "ready"),
+            ChannelEvent(10, ChannelEventKind.Send, "root/a0/c1", "root/0", "root/a0/c1/s1", "root/a0/c1/m0", "main.oi:5:5", "ready"),
+            ChannelEvent(12, ChannelEventKind.Receive, "root/a0/c1", "root", "root/a0/c1/r0", "root/a0/c1/m0", "main.oi:28:5", "ready"),
+        },
+        Selects: []SelectExpectation{
+            SelectRecord(3, "root/a0/select0", "main.oi:17:5", 1, SelectChoiceKind.Default, "none", 0, 0),
+            SelectRecord(8, "root/a0/select1", "main.oi:24:5", 0, SelectChoiceKind.Send, "root/a0/c0/m0", 1, 0),
+        },
+        Observations: []text{"default", "sent"},
+        RunCount: 1,
+        ReplayCount: 0,
+        InterruptAfterSequence: none,
+        Deadlock: none,
+    }
+}
+
+func ChannelDeadlockRuntime() ChannelRuntimeExpectation {
+    var origin FailureExpectation = FailureExpectation{
+        TaskID: "root/0",
+        Category: "DEADLOCK",
+        Phase: "runtime",
+        Location: "main.oi:5:5",
+        Detail: "no runnable task or external wake; root/0 waits to send on full root/a0/c0 while root awaits root/0",
+        Trace: []text{},
+        SourceIndex: 0,
+    }
+    return ChannelRuntimeExpectation{
+        Runtime: RuntimeExpectation{
+            HarnessInputs: []ArgumentExpectation{},
+            ParentEffectMappings: []EffectMappingExpectation{},
+            Launches: []LaunchExpectation{
+                Launch(
+                    "root/0",
+                    "root",
+                    0,
+                    "main.Fill",
+                    []ArgumentExpectation{Arg("output", "sender[text]", "root/a0/c0/s1")},
+                    []text{},
+                    []EffectMappingExpectation{},
+                ),
+            },
+            Schedule: []ScheduleEvent{
+                Event(3, EventKind.Admit, "root/0", "main.oi:10:15", ""),
+                Event(6, EventKind.Suspend, "root", "main.oi:11:5", "await root/0"),
+                Event(7, EventKind.Complete, "root/0", "main.oi:5:5", "DEADLOCK"),
+                Event(8, EventKind.Resume, "root", "main.oi:11:5", "DEADLOCK"),
+            },
+            ReplyTrace: []ScheduleEvent{},
+            EffectTrace: []ScheduleEvent{},
+            ContextExcludes: []text{},
+            TraceExcludes: []text{},
+            JournalExcludes: []text{},
+            Completions: []CompletionExpectation{
+                Completion("root/0", "failure", "", "DEADLOCK", "main.oi:5:5", 0),
+            },
+            Failures: []FailureExpectation{origin},
+            SelectedFailure: FailureExpectation{
+                TaskID: "root/0",
+                Category: "DEADLOCK",
+                Phase: "runtime",
+                Location: "main.oi:5:5",
+                Detail: "no runnable task or external wake; root/0 waits to send on full root/a0/c0 while root awaits root/0",
+                Trace: []text{"await@main.oi:11:5"},
+                SourceIndex: 0,
+            },
+            CancelledTaskIDs: []text{},
+            Policy: none,
+            JournalReadCount: 1,
+        },
+        Channels: []ChannelExpectation{
+            ChannelSpec(
+                "root/a0/c0",
+                "root/a0",
+                "text",
+                1,
+                []text{"root/a0/c0/s0", "root/a0/c0/s1"},
+                "root/a0/c0/r0",
+            ),
+        },
+        ChannelEvents: []ChannelEventExpectation{
+            ChannelEvent(1, ChannelEventKind.Create, "root/a0/c0", "root", "", "", "main.oi:9:13", "capacity=1"),
+            ChannelEvent(2, ChannelEventKind.SenderCopy, "root/a0/c0", "root", "root/a0/c0/s1", "", "main.oi:10:23", ""),
+            ChannelEvent(4, ChannelEventKind.Send, "root/a0/c0", "root/0", "root/a0/c0/s1", "root/a0/c0/m0", "main.oi:4:5", "first"),
+            ChannelEvent(5, ChannelEventKind.SendBlocked, "root/a0/c0", "root/0", "root/a0/c0/s1", "", "main.oi:5:5", "second"),
+        },
+        Selects: []SelectExpectation{},
+        Observations: []text{},
+        RunCount: 1,
+        ReplayCount: 0,
+        InterruptAfterSequence: none,
+        Deadlock: DeadlockExpectation{
+            Category: "DEADLOCK",
+            Phase: "runtime",
+            Location: "main.oi:5:5",
+            Detail: "no runnable task or external wake; root/0 waits to send on full root/a0/c0 while root awaits root/0",
+            BlockedTaskIDs: []text{"root/0", "root"},
+            BlockedOperations: []text{"send@main.oi:5:5", "await@main.oi:11:5"},
+            RunnableTaskCount: 0,
+            ExternalWakeCount: 0,
+        },
+    }
+}
+
+type TaskStateExpectation enum {
+    Pending
+    Running
+    Done
+    Failed
+    Cancelled
+}
+
+type ControlledEffectTerminal enum {
+    Completed
+    Cancelled
+}
+
+type ControlledEffectExpectation struct {
+    EffectName text
+    TaskID text
+    Authority text
+    Location text
+    Input text
+    StartSequence int
+    TerminalSequence int
+    Terminal ControlledEffectTerminal
+    Result text
+    HarnessAction text
+    InvocationCount int
+}
+
+type LifecycleEventKind enum {
+    DetachLaunch
+    RegistryTransfer
+    ParentComplete
+    ChildComplete
+    Notification
+    Status
+    CancelRequest
+    Cancellation
+    AttachedJoin
+    HandoffStart
+    OriginalTerminal
+    TargetStart
+    TargetComplete
+}
+
+type LifecycleEventExpectation struct {
+    Sequence int
+    Kind LifecycleEventKind
+    TaskID text
+    ActivationID text
+    Location text
+    State TaskStateExpectation?
+    Detail text
+}
+
+type RegistryExpectation struct {
+    TaskID text
+    FromOwner text
+    ToOwner text
+    TransferSequence int
+    TerminalState TaskStateExpectation
+    NotificationSequence int
+    NotificationCount int
+    ParentCompletedBeforeNotification bool
+    FailureChangesCompletedParent bool
+}
+
+type TaskInspectionExpectation struct {
+    Sequence int
+    ReturnSequence int
+    Operation text
+    TaskID text
+    ObservedState TaskStateExpectation
+    ResultState TaskStateExpectation
+    WaitsForTerminal bool
+    CancellationRecordCount int
+}
+
+type HandoffExpectation struct {
+    TaskID text
+    OriginalActivationID text
+    TargetActivationID text
+    Target text
+    Location text
+    AttachedJoinedTaskIDs []text
+    DetachedRegistryTaskIDs []text
+    Arguments []ArgumentExpectation
+    Authorities []text
+    EffectMappings []EffectMappingExpectation
+    ContextExcludes []text
+    OriginalResumed bool
+    ReturnsResult bool
+}
+
+type LifecycleRuntimeExpectation struct {
+    Runtime RuntimeExpectation
+    Events []LifecycleEventExpectation
+    ControlledEffects []ControlledEffectExpectation
+    Registry []RegistryExpectation
+    Inspections []TaskInspectionExpectation
+    Handoff HandoffExpectation?
+    DurableArguments []ArgumentExpectation
+    Observations []text
+    RunCount int
+    JournalReadCount int
+}
+
+func LifecycleEvent(
+    sequence int,
+    kind LifecycleEventKind,
+    taskID text,
+    activationID text,
+    location text,
+    state TaskStateExpectation?,
+    detail text,
+) LifecycleEventExpectation {
+    return LifecycleEventExpectation{
+        Sequence: sequence,
+        Kind: kind,
+        TaskID: taskID,
+        ActivationID: activationID,
+        Location: location,
+        State: state,
+        Detail: detail,
+    }
+}
+
+func DetachNotificationRuntime() LifecycleRuntimeExpectation {
+    var holdSuccessStart ScheduleEvent = Event(
+        4,
+        EventKind.Effect,
+        "root/0",
+        "main.oi:4:13",
+        "Hold Started(success value-7)",
+    )
+    var holdFailureStart ScheduleEvent = Event(
+        8,
+        EventKind.Effect,
+        "root/1",
+        "main.oi:4:13",
+        "Hold Started(failure value-7)",
+    )
+    var reply ScheduleEvent = Event(9, EventKind.Reply, "root", "main.oi:24:5", "parent-complete")
+    var holdSuccessComplete ScheduleEvent = Event(
+        11,
+        EventKind.Effect,
+        "root/0",
+        "main.oi:4:13",
+        "Hold Completed(released-success)",
+    )
+    var holdFailureComplete ScheduleEvent = Event(
+        15,
+        EventKind.Effect,
+        "root/1",
+        "main.oi:4:13",
+        "Hold Completed(released-failure)",
+    )
+    var detachedFailure FailureExpectation = FailureExpectation{
+        TaskID: "root/1",
+        Category: "DETACHED_FAILURE",
+        Phase: "runtime",
+        Location: "main.oi:6:9",
+        Detail: "released-failure",
+        Trace: []text{},
+        SourceIndex: 1,
+    }
+    return LifecycleRuntimeExpectation{
+        Runtime: RuntimeExpectation{
+            HarnessInputs: []ArgumentExpectation{Arg("value", "text", "value-7")},
+            ParentEffectMappings: []EffectMappingExpectation{
+                Mapping("Hold", "local.hold"),
+                Mapping("Reply", "caller.reply"),
+            },
+            Launches: []LaunchExpectation{
+                Launch(
+                    "root/0",
+                    "root",
+                    0,
+                    "main.Background",
+                    []ArgumentExpectation{
+                        Arg("value", "text", "success value-7"),
+                        Arg("fail", "bool", "false"),
+                    },
+                    []text{"local.hold"},
+                    []EffectMappingExpectation{Mapping("Hold", "local.hold")},
+                ),
+                Launch(
+                    "root/1",
+                    "root",
+                    1,
+                    "main.Background",
+                    []ArgumentExpectation{
+                        Arg("value", "text", "failure value-7"),
+                        Arg("fail", "bool", "true"),
+                    },
+                    []text{"local.hold"},
+                    []EffectMappingExpectation{Mapping("Hold", "local.hold")},
+                ),
+            },
+            Schedule: []ScheduleEvent{
+                Event(3, EventKind.Admit, "root/0", "main.oi:22:5", ""),
+                holdSuccessStart,
+                Event(7, EventKind.Admit, "root/1", "main.oi:23:5", ""),
+                holdFailureStart,
+                reply,
+                holdSuccessComplete,
+                Event(12, EventKind.Semantic, "root/0", "main.oi:8:12", "detached released-success"),
+                Event(13, EventKind.Complete, "root/0", "main.oi:8:12", "detached released-success"),
+                holdFailureComplete,
+                Event(16, EventKind.Complete, "root/1", "main.oi:6:9", "DETACHED_FAILURE"),
+            },
+            ReplyTrace: []ScheduleEvent{reply},
+            EffectTrace: []ScheduleEvent{
+                holdSuccessStart,
+                holdFailureStart,
+                holdSuccessComplete,
+                holdFailureComplete,
+            },
+            ContextExcludes: []text{},
+            TraceExcludes: []text{},
+            JournalExcludes: []text{},
+            Completions: []CompletionExpectation{
+                Completion("root/0", "success", "detached released-success", "none", "main.oi:8:12", 0),
+                Completion("root/1", "failure", "", "DETACHED_FAILURE", "main.oi:6:9", 1),
+            },
+            Failures: []FailureExpectation{detachedFailure},
+            SelectedFailure: none,
+            CancelledTaskIDs: []text{},
+            Policy: none,
+            JournalReadCount: 1,
+        },
+        Events: []LifecycleEventExpectation{
+            LifecycleEvent(1, LifecycleEventKind.DetachLaunch, "root/0", "root/0/a0", "main.oi:22:5", TaskStateExpectation.Pending, "launch committed"),
+            LifecycleEvent(2, LifecycleEventKind.RegistryTransfer, "root/0", "root/0/a0", "main.oi:22:5", TaskStateExpectation.Pending, "root -> host/task-registry"),
+            LifecycleEvent(5, LifecycleEventKind.DetachLaunch, "root/1", "root/1/a0", "main.oi:23:5", TaskStateExpectation.Pending, "launch committed"),
+            LifecycleEvent(6, LifecycleEventKind.RegistryTransfer, "root/1", "root/1/a0", "main.oi:23:5", TaskStateExpectation.Pending, "root -> host/task-registry"),
+            LifecycleEvent(10, LifecycleEventKind.ParentComplete, "root", "root/a0", "main.oi:25:1", TaskStateExpectation.Done, "parent-complete"),
+            LifecycleEvent(13, LifecycleEventKind.ChildComplete, "root/0", "root/0/a0", "main.oi:8:12", TaskStateExpectation.Done, "detached released-success"),
+            LifecycleEvent(14, LifecycleEventKind.Notification, "root/0", "root/0/a0", "main.oi:8:12", TaskStateExpectation.Done, "detached released-success"),
+            LifecycleEvent(16, LifecycleEventKind.ChildComplete, "root/1", "root/1/a0", "main.oi:6:9", TaskStateExpectation.Failed, "DETACHED_FAILURE:released-failure"),
+            LifecycleEvent(17, LifecycleEventKind.Notification, "root/1", "root/1/a0", "main.oi:6:9", TaskStateExpectation.Failed, "DETACHED_FAILURE:released-failure"),
+        },
+        ControlledEffects: []ControlledEffectExpectation{
+            ControlledEffectExpectation{
+                EffectName: "Hold",
+                TaskID: "root/0",
+                Authority: "local.hold",
+                Location: "main.oi:4:13",
+                Input: "success value-7",
+                StartSequence: 4,
+                TerminalSequence: 11,
+                Terminal: ControlledEffectTerminal.Completed,
+                Result: "released-success",
+                HarnessAction: "complete after parent terminal",
+                InvocationCount: 1,
+            },
+            ControlledEffectExpectation{
+                EffectName: "Hold",
+                TaskID: "root/1",
+                Authority: "local.hold",
+                Location: "main.oi:4:13",
+                Input: "failure value-7",
+                StartSequence: 8,
+                TerminalSequence: 15,
+                Terminal: ControlledEffectTerminal.Completed,
+                Result: "released-failure",
+                HarnessAction: "complete after parent terminal",
+                InvocationCount: 1,
+            },
+        },
+        Registry: []RegistryExpectation{
+            RegistryExpectation{
+                TaskID: "root/0",
+                FromOwner: "root",
+                ToOwner: "host/task-registry",
+                TransferSequence: 2,
+                TerminalState: TaskStateExpectation.Done,
+                NotificationSequence: 14,
+                NotificationCount: 1,
+                ParentCompletedBeforeNotification: true,
+                FailureChangesCompletedParent: false,
+            },
+            RegistryExpectation{
+                TaskID: "root/1",
+                FromOwner: "root",
+                ToOwner: "host/task-registry",
+                TransferSequence: 6,
+                TerminalState: TaskStateExpectation.Failed,
+                NotificationSequence: 17,
+                NotificationCount: 1,
+                ParentCompletedBeforeNotification: true,
+                FailureChangesCompletedParent: false,
+            },
+        },
+        Inspections: []TaskInspectionExpectation{},
+        Handoff: none,
+        DurableArguments: []ArgumentExpectation{
+            Arg("success.value", "text", "success value-7"),
+            Arg("success.fail", "bool", "false"),
+            Arg("failure.value", "text", "failure value-7"),
+            Arg("failure.fail", "bool", "true"),
+        },
+        Observations: []text{
+            "parent-complete",
+            "host:root/0:Done:detached released-success",
+            "host:root/1:Failed:DETACHED_FAILURE:released-failure",
+            "parent remains Done",
+        },
+        RunCount: 1,
+        JournalReadCount: 1,
+    }
+}
+
+func HandoffRuntime() LifecycleRuntimeExpectation {
+    var reply ScheduleEvent = Event(8, EventKind.Reply, "root", "main.oi:13:5", "continued after value-7")
+    return LifecycleRuntimeExpectation{
+        Runtime: RuntimeExpectation{
+            HarnessInputs: []ArgumentExpectation{Arg("value", "text", "value-7")},
+            ParentEffectMappings: []EffectMappingExpectation{Mapping("Reply", "caller.reply")},
+            Launches: []LaunchExpectation{
+                Launch(
+                    "root/0",
+                    "root",
+                    0,
+                    "main.Prepare",
+                    []ArgumentExpectation{Arg("value", "text", "value-7")},
+                    []text{},
+                    []EffectMappingExpectation{},
+                ),
+            },
+            Schedule: []ScheduleEvent{
+                Event(1, EventKind.Admit, "root/0", "main.oi:17:5", ""),
+                Event(2, EventKind.Semantic, "root/0", "main.oi:4:12", "prepared value-7"),
+                Event(3, EventKind.Complete, "root/0", "main.oi:4:12", "prepared value-7"),
+                reply,
+            },
+            ReplyTrace: []ScheduleEvent{reply},
+            EffectTrace: []ScheduleEvent{},
+            ContextExcludes: []text{},
+            TraceExcludes: []text{},
+            JournalExcludes: []text{},
+            Completions: []CompletionExpectation{
+                Completion("root/0", "success", "prepared value-7", "none", "main.oi:4:12", 0),
+            },
+            Failures: []FailureExpectation{},
+            SelectedFailure: none,
+            CancelledTaskIDs: []text{},
+            Policy: none,
+            JournalReadCount: 1,
+        },
+        Events: []LifecycleEventExpectation{
+            LifecycleEvent(4, LifecycleEventKind.AttachedJoin, "root/0", "root/0/a0", "main.oi:18:5", TaskStateExpectation.Done, "joined before handoff"),
+            LifecycleEvent(5, LifecycleEventKind.HandoffStart, "root", "root/a0", "main.oi:18:5", TaskStateExpectation.Running, "main.Continue"),
+            LifecycleEvent(6, LifecycleEventKind.OriginalTerminal, "root", "root/a0", "main.oi:18:5", TaskStateExpectation.Done, "never resumes"),
+            LifecycleEvent(7, LifecycleEventKind.TargetStart, "root", "root/a1", "main.oi:12:1", TaskStateExpectation.Running, "main.Continue"),
+            LifecycleEvent(9, LifecycleEventKind.TargetComplete, "root", "root/a1", "main.oi:14:1", TaskStateExpectation.Done, "unit"),
+        },
+        ControlledEffects: []ControlledEffectExpectation{},
+        Registry: []RegistryExpectation{},
+        Inspections: []TaskInspectionExpectation{},
+        Handoff: HandoffExpectation{
+            TaskID: "root",
+            OriginalActivationID: "root/a0",
+            TargetActivationID: "root/a1",
+            Target: "main.Continue",
+            Location: "main.oi:18:5",
+            AttachedJoinedTaskIDs: []text{"root/0"},
+            DetachedRegistryTaskIDs: []text{},
+            Arguments: []ArgumentExpectation{Arg("value", "text", "value-7")},
+            Authorities: []text{"caller.reply"},
+            EffectMappings: []EffectMappingExpectation{Mapping("Reply", "caller.reply")},
+            ContextExcludes: []text{"conversation", "locals", "tool-output", "memory", "parent-journal"},
+            OriginalResumed: false,
+            ReturnsResult: false,
+        },
+        DurableArguments: []ArgumentExpectation{Arg("value", "text", "value-7")},
+        Observations: []text{"joined root/0", "continued after value-7", "root/a0 never resumed"},
+        RunCount: 1,
+        JournalReadCount: 1,
+    }
+}
+
+func TaskStatusCancelRuntime() LifecycleRuntimeExpectation {
+    var holdStart ScheduleEvent = Event(
+        2,
+        EventKind.Effect,
+        "root/0",
+        "main.oi:6:13",
+        "Hold Started(cancel-7)",
+    )
+    var holdCancelled ScheduleEvent = Event(
+        5,
+        EventKind.Effect,
+        "root/0",
+        "main.oi:6:13",
+        "Hold Cancelled",
+    )
+    var cancellation FailureExpectation = FailureExpectation{
+        TaskID: "root/0",
+        Category: "TASK_CANCELLED",
+        Phase: "runtime",
+        Location: "main.oi:21:15",
+        Detail: "cancelled by root",
+        Trace: []text{"cancel@main.oi:23:5"},
+        SourceIndex: 0,
+    }
+    var reply ScheduleEvent = Event(8, EventKind.Reply, "root", "main.oi:25:5", "[Running,Cancelled]")
+    return LifecycleRuntimeExpectation{
+        Runtime: RuntimeExpectation{
+            HarnessInputs: []ArgumentExpectation{},
+            ParentEffectMappings: []EffectMappingExpectation{
+                Mapping("Hold", "local.hold"),
+                Mapping("Reply", "caller.reply"),
+            },
+            Launches: []LaunchExpectation{
+                Launch(
+                    "root/0",
+                    "root",
+                    0,
+                    "main.Slow",
+                    []ArgumentExpectation{Arg("value", "text", "cancel-7")},
+                    []text{"local.hold"},
+                    []EffectMappingExpectation{Mapping("Hold", "local.hold")},
+                ),
+            },
+            Schedule: []ScheduleEvent{
+                Event(1, EventKind.Admit, "root/0", "main.oi:21:15", ""),
+                holdStart,
+                holdCancelled,
+                Event(6, EventKind.Cancel, "root/0", "main.oi:21:15", "TASK_CANCELLED"),
+                reply,
+            },
+            ReplyTrace: []ScheduleEvent{reply},
+            EffectTrace: []ScheduleEvent{holdStart, holdCancelled},
+            ContextExcludes: []text{},
+            TraceExcludes: []text{},
+            JournalExcludes: []text{},
+            Completions: []CompletionExpectation{
+                Completion("root/0", "cancelled", "", "TASK_CANCELLED", "main.oi:21:15", 0),
+            },
+            Failures: []FailureExpectation{cancellation},
+            SelectedFailure: none,
+            CancelledTaskIDs: []text{"root/0"},
+            Policy: none,
+            JournalReadCount: 1,
+        },
+        Events: []LifecycleEventExpectation{
+            LifecycleEvent(3, LifecycleEventKind.Status, "root/0", "root/0/a0", "main.oi:22:15", TaskStateExpectation.Running, "Hold Started; main.Slow suspended"),
+            LifecycleEvent(4, LifecycleEventKind.CancelRequest, "root/0", "root/0/a0", "main.oi:23:5", TaskStateExpectation.Running, "root requests recursive cancellation"),
+            LifecycleEvent(6, LifecycleEventKind.Cancellation, "root/0", "root/0/a0", "main.oi:21:15", TaskStateExpectation.Cancelled, "TASK_CANCELLED after Hold Cancelled"),
+            LifecycleEvent(7, LifecycleEventKind.Status, "root/0", "root/0/a0", "main.oi:24:14", TaskStateExpectation.Cancelled, "main.Slow attached"),
+        },
+        ControlledEffects: []ControlledEffectExpectation{
+            ControlledEffectExpectation{
+                EffectName: "Hold",
+                TaskID: "root/0",
+                Authority: "local.hold",
+                Location: "main.oi:6:13",
+                Input: "cancel-7",
+                StartSequence: 2,
+                TerminalSequence: 5,
+                Terminal: ControlledEffectTerminal.Cancelled,
+                Result: "",
+                HarnessAction: "acknowledge cancellation",
+                InvocationCount: 1,
+            },
+        },
+        Registry: []RegistryExpectation{},
+        Inspections: []TaskInspectionExpectation{
+            TaskInspectionExpectation{
+                Sequence: 3,
+                ReturnSequence: 3,
+                Operation: "task.Status",
+                TaskID: "root/0",
+                ObservedState: TaskStateExpectation.Running,
+                ResultState: TaskStateExpectation.Running,
+                WaitsForTerminal: false,
+                CancellationRecordCount: 0,
+            },
+            TaskInspectionExpectation{
+                Sequence: 4,
+                ReturnSequence: 6,
+                Operation: "task.Cancel",
+                TaskID: "root/0",
+                ObservedState: TaskStateExpectation.Running,
+                ResultState: TaskStateExpectation.Cancelled,
+                WaitsForTerminal: true,
+                CancellationRecordCount: 1,
+            },
+            TaskInspectionExpectation{
+                Sequence: 7,
+                ReturnSequence: 7,
+                Operation: "task.Status",
+                TaskID: "root/0",
+                ObservedState: TaskStateExpectation.Cancelled,
+                ResultState: TaskStateExpectation.Cancelled,
+                WaitsForTerminal: false,
+                CancellationRecordCount: 1,
+            },
+        },
+        Handoff: none,
+        DurableArguments: []ArgumentExpectation{},
+        Observations: []text{"Running", "Cancelled", "TASK_CANCELLED count=1", "parent completes"},
+        RunCount: 1,
+        JournalReadCount: 1,
+    }
+}
+
+type HostEffectEventKind enum {
+    Attempt
+    Started
+    Suspend
+    Complete
+    Resume
+    Launch
+    Admit
+    Queue
+    CaptureFailure
+    Reply
+    StaticFailure
+}
+
+type HostEffectCallExpectation struct {
+    EffectName text
+    Authority text
+    Location text
+    AttemptCount int
+    HostInvocationCount int
+    CompletionCount int
+    SuspensionCount int
+    ResumeCount int
+}
+
+type HostEffectEventExpectation struct {
+    Sequence int
+    Kind HostEffectEventKind
+    TaskID text
+    Location text
+    Value text
+}
+
+type HostEffectRuntimeExpectation struct {
+    HarnessInputs []ArgumentExpectation
+    EffectMappings []EffectMappingExpectation
+    Calls []HostEffectCallExpectation
+    Events []HostEffectEventExpectation
+    ParentAuthorities []text
+    ChildReachableDemand []text
+    ChildAuthorities []text
+    DirectCapture bool
+    CaptureOK bool
+    CapturedCategory text?
+    FallbackValue text?
+    Suspends bool
+    ActiveSlotReleased bool
+    OccupiesSubagent bool
+    QuestionCount int
+    AuthorityExpanded bool
+    StaticCategory text?
+    StaticPhase text?
+    StaticLocation text?
+    Observations []text
+}
+
+func HostCall(
+    effectName text,
+    authority text,
+    location text,
+    attemptCount int,
+    hostInvocationCount int,
+    completionCount int,
+    suspensionCount int,
+    resumeCount int,
+) HostEffectCallExpectation {
+    return HostEffectCallExpectation{
+        EffectName: effectName,
+        Authority: authority,
+        Location: location,
+        AttemptCount: attemptCount,
+        HostInvocationCount: hostInvocationCount,
+        CompletionCount: completionCount,
+        SuspensionCount: suspensionCount,
+        ResumeCount: resumeCount,
+    }
+}
+
+func HostEvent(
+    sequence int,
+    kind HostEffectEventKind,
+    taskID text,
+    location text,
+    value text,
+) HostEffectEventExpectation {
+    return HostEffectEventExpectation{
+        Sequence: sequence,
+        Kind: kind,
+        TaskID: taskID,
+        Location: location,
+        Value: value,
+    }
+}
+
+func CaptureFallbackHostEffects() HostEffectRuntimeExpectation {
+    return HostEffectRuntimeExpectation{
+        HarnessInputs: []ArgumentExpectation{
+            Arg("url", "text", "https://example.invalid/value-7"),
+            Arg("cached", "text", "cached-7"),
+        },
+        EffectMappings: []EffectMappingExpectation{Mapping("Reply", "caller.reply")},
+        Calls: []HostEffectCallExpectation{
+            HostCall("Fetch", "network.fetch", "main.oi:14:24", 1, 0, 0, 0, 0),
+            HostCall("Reply", "caller.reply", "main.oi:23:5", 1, 1, 1, 0, 0),
+        },
+        Events: []HostEffectEventExpectation{
+            HostEvent(1, HostEffectEventKind.Attempt, "root", "main.oi:14:24", "network.fetch mapping absent"),
+            HostEvent(2, HostEffectEventKind.CaptureFailure, "root", "main.oi:14:24", "UNMAPPED_EFFECT"),
+            HostEvent(3, HostEffectEventKind.Reply, "root", "main.oi:23:5", "cached-7"),
+        },
+        ParentAuthorities: []text{"caller.reply"},
+        ChildReachableDemand: []text{},
+        ChildAuthorities: []text{},
+        DirectCapture: true,
+        CaptureOK: false,
+        CapturedCategory: "UNMAPPED_EFFECT",
+        FallbackValue: "cached-7",
+        Suspends: false,
+        ActiveSlotReleased: false,
+        OccupiesSubagent: false,
+        QuestionCount: 0,
+        AuthorityExpanded: false,
+        StaticCategory: none,
+        StaticPhase: none,
+        StaticLocation: none,
+        Observations: []text{"capture.Ok=false", "capture.Failure.Category=UNMAPPED_EFFECT", "reply=cached-7"},
+    }
+}
+
+func UserSuspensionHostEffects() HostEffectRuntimeExpectation {
+    return HostEffectRuntimeExpectation{
+        HarnessInputs: []ArgumentExpectation{
+            Arg("prompt", "user.Prompt", "Question=approve?;Context=task-7"),
+        },
+        EffectMappings: []EffectMappingExpectation{
+            Mapping("user.Ask", "user.interact"),
+            Mapping("Reply", "caller.reply"),
+        },
+        Calls: []HostEffectCallExpectation{
+            HostCall("user.Ask", "user.interact", "main.oi:6:12", 1, 1, 1, 1, 1),
+            HostCall("Reply", "caller.reply", "main.oi:23:5", 1, 1, 1, 0, 0),
+        },
+        Events: []HostEffectEventExpectation{
+            HostEvent(1, HostEffectEventKind.Launch, "root/0", "main.oi:19:16", "main.AskWorker"),
+            HostEvent(2, HostEffectEventKind.Admit, "root/0", "main.oi:19:16", "active=1/1; root excluded"),
+            HostEvent(3, HostEffectEventKind.Started, "root/0", "main.oi:6:12", "user.Ask Started: approve?; task-7"),
+            HostEvent(4, HostEffectEventKind.Suspend, "root/0", "main.oi:6:12", "active=0/1; slot released; no subagent"),
+            HostEvent(5, HostEffectEventKind.Launch, "root/1", "main.oi:20:18", "main.Probe"),
+            HostEvent(6, HostEffectEventKind.Admit, "root/1", "main.oi:20:18", "active=1/1 after root/0 release"),
+            HostEvent(7, HostEffectEventKind.Complete, "root/1", "main.oi:10:12", "probe-complete; active=0/1"),
+            HostEvent(8, HostEffectEventKind.Complete, "root/0", "main.oi:6:12", "user.Answer{Value:approved}; resume-ready"),
+            HostEvent(9, HostEffectEventKind.Queue, "root/0", "main.oi:6:12", "resume-ready count=1"),
+            HostEvent(10, HostEffectEventKind.Resume, "root/0", "main.oi:6:12", "active=1/1; resume count=1"),
+            HostEvent(11, HostEffectEventKind.Complete, "root/0", "main.oi:6:5", "user.Answer{Value:approved}; active=0/1"),
+            HostEvent(12, HostEffectEventKind.Reply, "root", "main.oi:23:5", "answer approved after probe-complete"),
+        },
+        ParentAuthorities: []text{"user.interact", "caller.reply"},
+        ChildReachableDemand: []text{"user.interact"},
+        ChildAuthorities: []text{"user.interact"},
+        DirectCapture: false,
+        CaptureOK: false,
+        CapturedCategory: none,
+        FallbackValue: none,
+        Suspends: true,
+        ActiveSlotReleased: true,
+        OccupiesSubagent: false,
+        QuestionCount: 1,
+        AuthorityExpanded: false,
+        StaticCategory: none,
+        StaticPhase: none,
+        StaticLocation: none,
+        Observations: []text{
+            "MaxConcurrency=1; root excluded from Active",
+            "Ask Started before suspension",
+            "Probe admitted and completed before Answer completion",
+            "ActiveSlotReleased=true",
+            "Answer completion count=1",
+            "Ask queue count=1; resume count=1; question repeat count=0",
+            "Reply count=1",
+        },
+    }
+}
+
+func AuthorityIntersectionHostEffects() HostEffectRuntimeExpectation {
+    return HostEffectRuntimeExpectation{
+        HarnessInputs: []ArgumentExpectation{
+            Arg("path", "fs.Path", "/workspace/input.txt"),
+            Arg("command", "process.Command", "Program=tool;Arguments=[];WorkingDirectory=none"),
+        },
+        EffectMappings: []EffectMappingExpectation{
+            Mapping("fs.Read", "workspace.read"),
+            Mapping("user.Respond", "user.respond"),
+        },
+        Calls: []HostEffectCallExpectation{
+            HostCall("fs.Read", "workspace.read", "main.oi:8:24", 1, 1, 1, 0, 0),
+            HostCall("process.Run", "process.run", "main.oi:9:24", 1, 0, 0, 0, 0),
+            HostCall("user.Respond", "user.respond", "main.oi:19:5", 1, 1, 1, 0, 0),
+        },
+        Events: []HostEffectEventExpectation{
+            HostEvent(1, HostEffectEventKind.Launch, "root/0", "main.oi:18:15", "main.Inspect"),
+            HostEvent(2, HostEffectEventKind.Attempt, "root/0", "main.oi:8:24", "workspace.read"),
+            HostEvent(3, HostEffectEventKind.Complete, "root/0", "main.oi:8:24", "content-7"),
+            HostEvent(4, HostEffectEventKind.Attempt, "root/0", "main.oi:9:24", "process.run mapping absent"),
+            HostEvent(5, HostEffectEventKind.CaptureFailure, "root/0", "main.oi:9:24", "UNMAPPED_EFFECT"),
+            HostEvent(6, HostEffectEventKind.Reply, "root", "main.oi:19:5", "UNMAPPED_EFFECT"),
+        },
+        ParentAuthorities: []text{"workspace.read", "user.respond"},
+        ChildReachableDemand: []text{"workspace.read", "process.run"},
+        ChildAuthorities: []text{"workspace.read"},
+        DirectCapture: true,
+        CaptureOK: false,
+        CapturedCategory: "UNMAPPED_EFFECT",
+        FallbackValue: none,
+        Suspends: false,
+        ActiveSlotReleased: false,
+        OccupiesSubagent: false,
+        QuestionCount: 0,
+        AuthorityExpanded: false,
+        StaticCategory: none,
+        StaticPhase: none,
+        StaticLocation: none,
+        Observations: []text{"child authorities=workspace.read", "process.Run invocation count=0", "reply=UNMAPPED_EFFECT"},
+    }
+}
+
+func HiddenOptionalEffectStatic() HostEffectRuntimeExpectation {
+    return HostEffectRuntimeExpectation{
+        HarnessInputs: []ArgumentExpectation{
+            Arg("url", "text", "https://example.invalid/value-7"),
+            Arg("cached", "text", "cached-7"),
+        },
+        EffectMappings: []EffectMappingExpectation{Mapping("Reply", "caller.reply")},
+        Calls: []HostEffectCallExpectation{},
+        Events: []HostEffectEventExpectation{
+            HostEvent(1, HostEffectEventKind.StaticFailure, "root", "main.oi:14:12", "UNMAPPED_EFFECT"),
+        },
+        ParentAuthorities: []text{"caller.reply"},
+        ChildReachableDemand: []text{},
+        ChildAuthorities: []text{},
+        DirectCapture: false,
+        CaptureOK: false,
+        CapturedCategory: none,
+        FallbackValue: none,
+        Suspends: false,
+        ActiveSlotReleased: false,
+        OccupiesSubagent: false,
+        QuestionCount: 0,
+        AuthorityExpanded: false,
+        StaticCategory: "UNMAPPED_EFFECT",
+        StaticPhase: "effect mapping",
+        StaticLocation: "main.oi:14:12",
+        Observations: []text{"compile stops before effects", "capture(helper) does not make Fetch optional"},
+    }
+}

@@ -1,0 +1,144 @@
+package model
+
+import "std/diagnostic"
+
+type Identifier struct {
+    Value text
+}
+
+type SafeText struct {
+    Value text
+}
+
+type ValueType enum {
+    Text
+    Path
+    Unit
+}
+
+type Authority enum {
+    CallerReply
+    WorkspaceRead
+    WorkspaceWrite
+}
+
+type ReferenceKind enum {
+    None
+    Input
+    StepResult
+    Literal
+}
+
+type ActionKind enum {
+    Pass
+    Read
+    Write
+    Reply
+    Stop
+}
+
+type PredicateKind enum {
+    TextEquals
+}
+
+type CallerInput struct {
+    Ordinal int
+    Name Identifier
+    Type ValueType
+}
+
+type ValueReference struct {
+    Kind ReferenceKind
+    Name Identifier
+    Literal SafeText
+    Type ValueType
+}
+
+type Binding struct {
+    Present bool
+    Name Identifier
+    Type ValueType
+}
+
+type StopAction struct {
+    Category SafeText
+    Detail SafeText
+}
+
+type Step struct {
+    Ordinal int
+    Name Identifier
+    Action ActionKind
+    Value ValueReference
+    Path ValueReference
+    Content ValueReference
+    Result Binding
+    Stop StopAction
+}
+
+type Predicate struct {
+    Ordinal int
+    Kind PredicateKind
+    Left ValueReference
+    Right ValueReference
+}
+
+type Branch struct {
+    Ordinal int
+    Trigger int
+    Steps []Identifier
+}
+
+type SourceSkill struct {
+    ExactBytes text
+    Name SafeText
+    Description SafeText
+    Body text
+    BodyStartByte int
+    BodyStartLine int
+    Diagnostics []diagnostic.Diagnostic
+}
+
+type BehaviorModel struct {
+    Name SafeText
+    Description SafeText
+    Inputs []CallerInput
+    Triggers []Predicate
+    Steps []Step
+    Unconditional []Identifier
+    Branches []Branch
+    NoMatch StopAction
+    Authorities []Authority
+    OutputContract SafeText
+    Diagnostics []diagnostic.Diagnostic
+}
+
+type Bundle struct {
+    MainSource text
+    ModuleSource text
+    AdapterSource text
+}
+
+type LoweredProgram struct {
+    Inputs []CallerInput
+    Triggers []Predicate
+    Steps []Step
+    Unconditional []Identifier
+    Branches []Branch
+    NoMatch StopAction
+    Authorities []Authority
+    OutputContract SafeText
+}
+
+type BundleRecovery struct {
+    Valid bool
+    Program LoweredProgram
+    Module SafeText
+    Version text
+    AdapterName SafeText
+    AdapterDescription SafeText
+    AdapterInputs []CallerInput
+    AdapterTriggers []Predicate
+    AdapterAuthorities []Authority
+    Diagnostics []diagnostic.Diagnostic
+}

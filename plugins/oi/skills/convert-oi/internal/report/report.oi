@@ -1,0 +1,61 @@
+package report
+
+import "std/diagnostic"
+import "oi/skills/convert-oi/internal/model"
+
+type Status enum {
+    Pass
+    Fail
+}
+
+type ConversionReport struct {
+    Status Status
+    Model model.BehaviorModel?
+    Bundle model.Bundle?
+    Proof text?
+    Writes int
+    PublishAtomic bool
+    ResidualRace text?
+    Diagnostics []diagnostic.Diagnostic
+}
+
+func Passed(
+    behavior model.BehaviorModel,
+    bundle model.Bundle,
+    proof text,
+    writes int,
+    publishAtomic bool,
+    residualRace text?,
+) ConversionReport {
+    return ConversionReport{
+        Status: Status.Pass,
+        Model: behavior,
+        Bundle: bundle,
+        Proof: proof,
+        Writes: writes,
+        PublishAtomic: publishAtomic,
+        ResidualRace: residualRace,
+        Diagnostics: []diagnostic.Diagnostic{},
+    }
+}
+
+func Failed(
+    behavior model.BehaviorModel?,
+    bundle model.Bundle?,
+    proof text?,
+    writes int,
+    publishAtomic bool,
+    residualRace text?,
+    diagnostics []diagnostic.Diagnostic,
+) ConversionReport {
+    return ConversionReport{
+        Status: Status.Fail,
+        Model: behavior,
+        Bundle: bundle,
+        Proof: proof,
+        Writes: writes,
+        PublishAtomic: publishAtomic,
+        ResidualRace: residualRace,
+        Diagnostics: diagnostics,
+    }
+}

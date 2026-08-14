@@ -1,0 +1,6 @@
+package main
+
+type Key text [value is exactly the UTF-8 text rejected]
+
+func main(key Key) {
+}

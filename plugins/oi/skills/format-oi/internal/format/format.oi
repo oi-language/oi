@@ -1,0 +1,110 @@
+package format
+
+import "std/diagnostic"
+import "std/fs"
+import "oi/skills/format-oi/internal/model"
+import "oi/skills/format-oi/internal/render"
+import "oi/skills/format-oi/internal/report"
+
+func SourceStart(path fs.Path) text {
+    return [the exact underlying UTF-8 path bytes of {path} followed by @0:1:1]
+}
+
+func Finding(path fs.Path, category text, phase text, detail text) []diagnostic.Diagnostic {
+    var location text = SourceStart(path)
+    return []diagnostic.Diagnostic{diagnostic.New(category, phase, location, detail)}
+}
+
+func EffectFinding(cause failure) []diagnostic.Diagnostic {
+    return []diagnostic.Diagnostic{diagnostic.Diagnostic{
+        Category: cause.Category,
+        Phase: cause.Phase,
+        Location: cause.Location,
+        Detail: cause.Detail,
+        Trace: cause.Trace,
+    }}
+}
+
+func ReadWritten(target fs.Path, candidate text) report.FormatReport {
+    var readResult outcome[text] = capture(fs.Read(target))
+    if readResult.Ok {
+        var writtenSource text = readResult.Value
+        if writtenSource != candidate {
+            var diagnostics []diagnostic.Diagnostic = Finding(target, "FORMAT_WRITE_MISMATCH", "format-write", "reread bytes differ from the canonical source")
+            return report.Failed(target, true, writtenSource, diagnostics)
+        }
+        return report.Changed(target, writtenSource)
+    } else {
+        return report.Failed(target, true, none, EffectFinding(readResult.Failure))
+    }
+}
+
+func VerifyWrite(target fs.Path, candidate text) report.FormatReport {
+    var scanResult outcome[fs.Observation] = capture(fs.Scan(target))
+    if scanResult.Ok {
+        var observation fs.Observation = scanResult.Value
+        if observation.Kind != fs.Kind.File {
+            var diagnostics []diagnostic.Diagnostic = Finding(target, "FORMAT_WRITE_UNVERIFIED", "format-write", "written target is not observable as exactly one file")
+            return report.Failed(target, true, none, diagnostics)
+        }
+        return ReadWritten(target, candidate)
+    } else {
+        return report.Failed(target, true, none, EffectFinding(scanResult.Failure))
+    }
+}
+
+func WriteCandidate(target fs.Path, before text, candidate text) report.FormatReport {
+    var writeResult outcome[unit] = capture(fs.Write(target, candidate))
+    if writeResult.Ok {
+        return VerifyWrite(target, candidate)
+    } else {
+        return report.Failed(target, true, before, EffectFinding(writeResult.Failure))
+    }
+}
+
+func FormatSource(target fs.Path, available []text, before text) report.FormatReport {
+    var original model.Source = model.Parse(target, before)
+    var originalDiagnostics []diagnostic.Diagnostic = model.Validate(original, available)
+    if len(originalDiagnostics) != 0 {
+        return report.Failed(target, false, before, originalDiagnostics)
+    }
+
+    var candidate text = render.Canonical(original)
+    var reparsed model.Source = model.Parse(target, candidate)
+    var candidateDiagnostics []diagnostic.Diagnostic = model.Validate(reparsed, available)
+    if len(candidateDiagnostics) != 0 {
+        return report.Failed(target, false, before, candidateDiagnostics)
+    }
+    if !model.Equivalent(original, reparsed) {
+        var diagnostics []diagnostic.Diagnostic = Finding(target, "FORMAT_NON_EQUIVALENT", "format-equivalence", "canonical rendering changed the typed source judgment")
+        return report.Failed(target, false, before, diagnostics)
+    }
+    if candidate == before {
+        return report.Unchanged(target, before)
+    }
+    return WriteCandidate(target, before, candidate)
+}
+
+func ReadTarget(target fs.Path, available []text) report.FormatReport {
+    var readResult outcome[text] = capture(fs.Read(target))
+    if readResult.Ok {
+        var source text = readResult.Value
+        return FormatSource(target, available, source)
+    } else {
+        return report.Failed(target, false, none, EffectFinding(readResult.Failure))
+    }
+}
+
+func Format(target fs.Path, available []text) report.FormatReport {
+    var scanResult outcome[fs.Observation] = capture(fs.Scan(target))
+    if scanResult.Ok {
+        var observation fs.Observation = scanResult.Value
+        if observation.Kind != fs.Kind.File {
+            var diagnostics []diagnostic.Diagnostic = Finding(target, "FORMAT_TARGET_REQUIRED", "format-input", "target must identify exactly one Oi source file")
+            return report.Failed(target, false, none, diagnostics)
+        }
+        return ReadTarget(target, available)
+    } else {
+        return report.Failed(target, false, none, EffectFinding(scanResult.Failure))
+    }
+}

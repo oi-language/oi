@@ -1,0 +1,7 @@
+package main
+
+const Worker text = "not a function"
+
+func main() {
+    oi Worker()
+}

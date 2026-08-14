@@ -1,0 +1,14 @@
+package main
+
+type Name text [the {value} is one non-empty name]
+type Greeting text [the {value} is a friendly greeting addressed to the supplied name]
+
+effect Reply(value Greeting) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main(name Name) {
+    var greeting Greeting = [greet {name}]
+    Reply(greeting)
+}

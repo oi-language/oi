@@ -1,0 +1,7 @@
+package main
+
+type Broken struct {
+    Value text
+
+func main() {
+}

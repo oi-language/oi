@@ -1,0 +1,14 @@
+package main
+
+import "std/fs"
+import "oi/skills/format-oi/internal/format"
+import "oi/skills/format-oi/internal/report"
+
+effect Reply(value report.FormatReport) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main(target fs.Path, available []text) {
+    Reply(format.Format(target, available))
+}

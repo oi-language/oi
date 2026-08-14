@@ -1,0 +1,16 @@
+{
+  "name": "oi",
+  "description": "A versioned language for structured Agent Skills with a toolchain written in Oi.",
+  "owner": { "name": "oi-language" },
+  "plugins": [
+    {
+      "name": "oi",
+      "version": "0.0.1",
+      "source": "./plugins/oi",
+      "description": "A versioned language for structured Agent Skills with a toolchain written in Oi.",
+      "homepage": "https://github.com/oi-language/oi",
+      "repository": "https://github.com/oi-language/oi",
+      "license": "MIT"
+    }
+  ]
+}

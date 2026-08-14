@@ -1,0 +1,32 @@
+package main
+
+type Status enum {
+    Pending
+    Done
+}
+type Finding struct {
+    Status Status
+    Evidence []text
+    Attempts int
+    Accepted bool
+    Note text?
+} [every item in {value.Evidence} is non-empty]
+
+func Build() Finding {
+    return Finding{
+        Status: Status.Done,
+        Evidence: []text{"typed", "structured"},
+        Attempts: 2,
+        Accepted: true,
+        Note: none,
+    }
+}
+
+effect Reply(value Finding) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main() {
+    Reply(Build())
+}

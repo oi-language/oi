@@ -1,0 +1,4 @@
+package main
+func main(source text) {
+    var result text = [first read {source}, then retry twice, otherwise stop]
+}

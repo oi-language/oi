@@ -1,0 +1,4 @@
+package main
+func main(source text) {
+    var result text = [summarize [the important parts of {source}]]
+}

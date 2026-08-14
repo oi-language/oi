@@ -1,0 +1,347 @@
+package main
+
+type Expect enum {
+    Pass
+    StaticFail
+    RuntimeFail
+}
+
+type Case struct {
+    ID text
+    Target text
+    Expect Expect
+    Category text
+    Location text?
+    Runtime RuntimeExpectation?
+    Channel ChannelRuntimeExpectation?
+    Lifecycle LifecycleRuntimeExpectation?
+    HostEffect HostEffectRuntimeExpectation?
+}
+
+func BasicCase(id text, target text, expect Expect, category text) Case {
+    return Case{
+        ID: id,
+        Target: target,
+        Expect: expect,
+        Category: category,
+        Location: none,
+        Runtime: none,
+        Channel: none,
+        Lifecycle: none,
+        HostEffect: none,
+    }
+}
+
+func LocatedCase(
+    id text,
+    target text,
+    expect Expect,
+    category text,
+    location text,
+) Case {
+    return Case{
+        ID: id,
+        Target: target,
+        Expect: expect,
+        Category: category,
+        Location: location,
+        Runtime: none,
+        Channel: none,
+        Lifecycle: none,
+        HostEffect: none,
+    }
+}
+
+func RuntimeCase(
+    id text,
+    target text,
+    expect Expect,
+    category text,
+    location text?,
+    runtime RuntimeExpectation,
+) Case {
+    return Case{
+        ID: id,
+        Target: target,
+        Expect: expect,
+        Category: category,
+        Location: location,
+        Runtime: runtime,
+        Channel: none,
+        Lifecycle: none,
+        HostEffect: none,
+    }
+}
+
+func ChannelCase(
+    id text,
+    target text,
+    expect Expect,
+    category text,
+    location text?,
+    channelRuntime ChannelRuntimeExpectation,
+) Case {
+    return Case{
+        ID: id,
+        Target: target,
+        Expect: expect,
+        Category: category,
+        Location: location,
+        Runtime: none,
+        Channel: channelRuntime,
+        Lifecycle: none,
+        HostEffect: none,
+    }
+}
+
+func LifecycleCase(
+    id text,
+    target text,
+    expect Expect,
+    category text,
+    location text?,
+    lifecycle LifecycleRuntimeExpectation,
+) Case {
+    return Case{
+        ID: id,
+        Target: target,
+        Expect: expect,
+        Category: category,
+        Location: location,
+        Runtime: none,
+        Channel: none,
+        Lifecycle: lifecycle,
+        HostEffect: none,
+    }
+}
+
+func HostEffectCase(
+    id text,
+    target text,
+    expect Expect,
+    category text,
+    location text?,
+    hostEffect HostEffectRuntimeExpectation,
+) Case {
+    return Case{
+        ID: id,
+        Target: target,
+        Expect: expect,
+        Category: category,
+        Location: location,
+        Runtime: none,
+        Channel: none,
+        Lifecycle: none,
+        HostEffect: hostEffect,
+    }
+}
+
+func Cases() []Case {
+    return []Case{
+        BasicCase("types", "valid/types", Expect.Pass, "none"),
+        BasicCase("control", "valid/control", Expect.Pass, "none"),
+        BasicCase("semantic", "valid/semantic", Expect.Pass, "none"),
+        BasicCase("import", "valid/import", Expect.Pass, "none"),
+        BasicCase("entry-effect", "valid/entry-effect", Expect.Pass, "none"),
+        BasicCase("missing-semantic-type", "invalid/missing-semantic-type", Expect.StaticFail, "MISSING_SEMANTIC_TYPE"),
+        BasicCase("imperative-semantic", "invalid/imperative-semantic", Expect.StaticFail, "IMPERATIVE_SEMANTIC_BLOCK"),
+        BasicCase("nested-semantic", "invalid/nested-semantic", Expect.StaticFail, "NESTED_SEMANTIC_EXPRESSION"),
+        BasicCase("implicit-named-conversion", "invalid/implicit-named-conversion", Expect.StaticFail, "IMPLICIT_NAMED_CONVERSION"),
+        BasicCase("unsupported-map", "invalid/unsupported-map", Expect.StaticFail, "UNSUPPORTED_TYPE"),
+        BasicCase("missing-entry", "invalid/missing-entry", Expect.StaticFail, "MISSING_ENTRY"),
+        BasicCase("entry-result", "invalid/entry-result", Expect.StaticFail, "ENTRY_RESULT_FORBIDDEN"),
+        BasicCase("entry-return-value", "invalid/entry-return-value", Expect.StaticFail, "ENTRY_RETURN_VALUE"),
+        BasicCase("entry-call", "invalid/entry-call", Expect.StaticFail, "ENTRY_NOT_CALLABLE"),
+        BasicCase("type-contract", "runtime/type-contract", Expect.RuntimeFail, "TYPE_CONTRACT_MISMATCH"),
+        RuntimeCase("oi-continue", "runtime/oi-continue", Expect.Pass, "none", none, OiContinueRuntime()),
+        RuntimeCase("oi-discard", "runtime/oi-discard", Expect.Pass, "none", none, OiDiscardRuntime()),
+        RuntimeCase("await-immediate", "runtime/await-immediate", Expect.Pass, "none", none, AwaitImmediateRuntime()),
+        RuntimeCase(
+            "attached-failure-order",
+            "runtime/attached-failure-order",
+            Expect.RuntimeFail,
+            "LOWER_SOURCE_FAILURE",
+            "main.oi:6:5",
+            FailureOrderRuntime(),
+        ),
+        RuntimeCase(
+            "attached-cancellation",
+            "runtime/attached-cancellation",
+            Expect.RuntimeFail,
+            "CANCEL_SOURCE_FAILURE",
+            "main.oi:4:5",
+            CancellationRuntime(),
+        ),
+        RuntimeCase("context-isolation", "runtime/context-isolation", Expect.Pass, "none", none, IsolationRuntime()),
+        RuntimeCase(
+            "capacity-pressure",
+            "runtime/capacity-pressure",
+            Expect.Pass,
+            "none",
+            none,
+            CapacityPressureRuntime(),
+        ),
+        RuntimeCase(
+            "task-policy",
+            "runtime/task-policy",
+            Expect.RuntimeFail,
+            "TASK_DEPTH_LIMIT",
+            "main.oi:4:14",
+            TaskPolicyRuntime(),
+        ),
+        LocatedCase(
+            "oi-anonymous",
+            "invalid/oi-anonymous",
+            Expect.StaticFail,
+            "OI_REQUIRES_NAMED_FUNCTION",
+            "main.oi:6:5",
+        ),
+        LocatedCase(
+            "oi-effect",
+            "invalid/oi-effect",
+            Expect.StaticFail,
+            "OI_EFFECT_FORBIDDEN",
+            "main.oi:9:5",
+        ),
+        ChannelCase(
+            "channel-progress",
+            "runtime/channel-progress",
+            Expect.Pass,
+            "none",
+            none,
+            ChannelProgressRuntime(),
+        ),
+        ChannelCase(
+            "channel-command",
+            "runtime/channel-command",
+            Expect.Pass,
+            "none",
+            none,
+            ChannelCommandRuntime(),
+        ),
+        ChannelCase(
+            "select-replay",
+            "runtime/select-replay",
+            Expect.Pass,
+            "none",
+            none,
+            SelectReplayRuntime(),
+        ),
+        ChannelCase(
+            "select-send-default",
+            "runtime/select-send-default",
+            Expect.Pass,
+            "none",
+            none,
+            SelectSendDefaultRuntime(),
+        ),
+        ChannelCase(
+            "channel-deadlock",
+            "runtime/channel-deadlock",
+            Expect.RuntimeFail,
+            "DEADLOCK",
+            "main.oi:5:5",
+            ChannelDeadlockRuntime(),
+        ),
+        LocatedCase(
+            "channel-zero",
+            "invalid/channel-zero",
+            Expect.StaticFail,
+            "INVALID_CHANNEL_CAPACITY",
+            "main.oi:4:27",
+        ),
+        LocatedCase(
+            "channel-handle-payload",
+            "invalid/channel-handle-payload",
+            Expect.StaticFail,
+            "RUNTIME_HANDLE_PAYLOAD",
+            "main.oi:4:21",
+        ),
+        LocatedCase(
+            "multiple-receivers",
+            "invalid/multiple-receivers",
+            Expect.StaticFail,
+            "RECEIVER_ALREADY_MOVED",
+            "main.oi:10:26",
+        ),
+        LifecycleCase(
+            "detach-notification",
+            "runtime/detach-notification",
+            Expect.Pass,
+            "none",
+            none,
+            DetachNotificationRuntime(),
+        ),
+        LifecycleCase(
+            "handoff",
+            "runtime/handoff",
+            Expect.Pass,
+            "none",
+            none,
+            HandoffRuntime(),
+        ),
+        LifecycleCase(
+            "task-status-cancel",
+            "runtime/task-status-cancel",
+            Expect.Pass,
+            "none",
+            none,
+            TaskStatusCancelRuntime(),
+        ),
+        LocatedCase(
+            "detach-endpoint",
+            "invalid/detach-endpoint",
+            Expect.StaticFail,
+            "ENDPOINT_SCOPE_ESCAPE",
+            "main.oi:9:22",
+        ),
+        LocatedCase(
+            "handoff-endpoint",
+            "invalid/handoff-endpoint",
+            Expect.StaticFail,
+            "ENDPOINT_SCOPE_ESCAPE",
+            "main.oi:9:18",
+        ),
+        HostEffectCase(
+            "capture-fallback",
+            "runtime/capture-fallback",
+            Expect.Pass,
+            "none",
+            none,
+            CaptureFallbackHostEffects(),
+        ),
+        HostEffectCase(
+            "user-suspension",
+            "runtime/user-suspension",
+            Expect.Pass,
+            "none",
+            none,
+            UserSuspensionHostEffects(),
+        ),
+        HostEffectCase(
+            "authority-intersection",
+            "runtime/authority-intersection",
+            Expect.Pass,
+            "none",
+            none,
+            AuthorityIntersectionHostEffects(),
+        ),
+        HostEffectCase(
+            "hidden-optional-effect",
+            "invalid/hidden-optional-effect",
+            Expect.StaticFail,
+            "UNMAPPED_EFFECT",
+            "main.oi:14:12",
+            HiddenOptionalEffectStatic(),
+        ),
+    }
+}
+
+effect Reply(value []Case) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main() {
+    Reply(Cases())
+}

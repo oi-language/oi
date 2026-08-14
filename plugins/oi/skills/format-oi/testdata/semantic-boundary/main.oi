@@ -1,0 +1,20 @@
+package main
+
+type PreservedText text [the {value} contains escaped \[brackets\], escaped \{braces\}, and    internal   spacing exactly]
+
+type Result struct {
+    Exact text
+    Semantic PreservedText
+}
+
+effect Reply(value Result) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once; keep escaped \[brackets\], escaped \{braces\}, and    these   spaces]
+}
+
+func main(exact text, semantic PreservedText) {
+    Reply(Result{
+        Exact: "  literal\\tbytes {stay} [exact]  ",
+        Semantic: semantic,
+    },)
+}

@@ -1,0 +1,8 @@
+.worktrees/
+.vscode/
+.idea/
+.superpowers/
+docs/superpowers/specs/
+docs/superpowers/plans/
+.DS_Store
+Thumbs.db

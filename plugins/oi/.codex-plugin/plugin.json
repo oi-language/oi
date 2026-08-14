@@ -1,0 +1,24 @@
+{
+  "name": "oi",
+  "version": "0.0.1",
+  "description": "A versioned language for structured Agent Skills with a toolchain written in Oi.",
+  "skills": "./skills/",
+  "author": {
+    "name": "oi-language",
+    "url": "https://github.com/oi-language"
+  },
+  "homepage": "https://github.com/oi-language/oi",
+  "repository": "https://github.com/oi-language/oi",
+  "license": "MIT",
+  "keywords": ["oi", "agent", "skill", "structured", "language"],
+  "interface": {
+    "displayName": "Oi",
+    "shortDescription": "Versioned language for structured Agent Skills",
+    "longDescription": "Agents execute versioned, typed .oi modules through explicit effects, task boundaries, and deterministic runtime contracts. The bundled toolchain is written in Oi.",
+    "developerName": "oi-language",
+    "category": "Productivity",
+    "capabilities": ["Skills"],
+    "websiteURL": "https://github.com/oi-language/oi",
+    "defaultPrompt": ["Use Oi to load and run the current versioned .oi Skill module."]
+  }
+}

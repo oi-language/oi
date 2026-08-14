@@ -1,0 +1,117 @@
+package main
+
+type Phase enum {
+    Reproduce
+    Evidence
+    Hypothesis
+    Verify
+    Complete
+}
+
+type Hypothesis struct {
+    Claim text
+    Evidence []text
+    Attempts int
+    Verified bool
+}
+
+type Session struct {
+    Phase Phase
+    Transitions []Phase
+    Hypotheses []Hypothesis
+    Failure failure?
+}
+
+effect Reproduce(problem text) text {
+    uses debug.reproduce
+    contract [reproduce {problem} once and return exact observed evidence]
+}
+
+effect Observe(problem text, attempt int) text {
+    uses debug.observe
+    contract [collect one new root-cause observation for {problem} on bounded attempt {attempt}]
+}
+
+effect TestHypothesis(problem text, claim text, evidence []text) bool {
+    uses debug.test
+    contract [test only {claim} against exact {evidence} for {problem} and return whether it explains the reproduction]
+}
+
+effect ApplyFix(problem text, claim text) text {
+    uses debug.change
+    contract [apply one candidate fix for verified root cause {claim} in {problem} and return its identity]
+}
+
+effect VerifyFix(problem text, candidate text) bool {
+    uses debug.verify
+    contract [rerun the reproduction for {problem} after {candidate} and return whether the root cause is removed]
+}
+
+effect Reply(value Session) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func Debug(problem text) Session {
+    var phase Phase = Phase.Reproduce
+    var transitions []Phase = []Phase{phase}
+    var reproduction text = ""
+    var first outcome[text] = capture(Reproduce(problem))
+    if first.Ok {
+        reproduction = first.Value
+    } else {
+        stop("REPRODUCTION_REQUIRED", problem)
+    }
+
+    phase = Phase.Evidence
+    transitions = append(transitions, phase)
+    var evidence []text = []text{reproduction}
+    var hypotheses []Hypothesis = []Hypothesis{}
+    var attempts int = 0
+    for attempts < 3 {
+        var observation outcome[text] = capture(Observe(problem, attempts))
+        if observation.Ok {
+            evidence = append(evidence, observation.Value)
+            phase = Phase.Hypothesis
+            transitions = append(transitions, phase)
+            var claim text = [root cause supported by {observation.Value}]
+            var tested outcome[bool] = capture(TestHypothesis(problem, claim, evidence))
+            var confirmed bool = false
+            if tested.Ok {
+                confirmed = tested.Value
+            }
+            hypotheses = append(
+                hypotheses,
+                Hypothesis{Claim: claim, Evidence: evidence, Attempts: attempts + 1, Verified: confirmed},
+            )
+            if confirmed {
+                phase = Phase.Verify
+                transitions = append(transitions, phase)
+                var candidate outcome[text] = capture(ApplyFix(problem, claim))
+                if candidate.Ok {
+                    var verified outcome[bool] = capture(VerifyFix(problem, candidate.Value))
+                    if verified.Ok {
+                        if verified.Value {
+                            phase = Phase.Complete
+                            transitions = append(transitions, phase)
+                            return Session{
+                                Phase: phase,
+                                Transitions: transitions,
+                                Hypotheses: hypotheses,
+                                Failure: none,
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        attempts = attempts + 1
+        phase = Phase.Evidence
+        transitions = append(transitions, phase)
+    }
+    stop("INSUFFICIENT_ROOT_CAUSE_EVIDENCE", problem)
+}
+
+func main(problem text) {
+    Reply(Debug(problem))
+}

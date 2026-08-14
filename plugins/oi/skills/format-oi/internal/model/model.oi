@@ -1,0 +1,129 @@
+package model
+
+import "std/diagnostic"
+import "std/fs"
+
+type TokenKind enum {
+    Identifier
+    Keyword
+    IntegerLiteral
+    TextLiteral
+    SemanticLiteral
+    Comment
+    UnaryOperator
+    BinaryOperator
+    DefinitionOperator
+    AssignmentOperator
+    ShortDeclarationOperator
+    FieldColon
+    CaseColon
+    Dot
+    Comma
+    Semicolon
+    OpenParen
+    CloseParen
+    OpenTypeBracket
+    CloseTypeBracket
+    OpenIndexBracket
+    CloseIndexBracket
+    OpenStructuralBrace
+    CloseStructuralBrace
+    OpenCompositeBrace
+    CloseCompositeBrace
+    OptionalMark
+    Whitespace
+    LineBreak
+    Invalid
+}
+
+type Separation enum {
+    Tight
+    Space
+}
+
+type Token struct {
+    Kind TokenKind
+    Lexeme text
+    Location text
+}
+
+type Range struct {
+    Start int
+    End int
+}
+
+type Source struct {
+    Path fs.Path
+    Tokens []Token
+    SemanticRanges []Range
+}
+
+func WordLike(kind TokenKind) bool {
+    return kind == TokenKind.Identifier || kind == TokenKind.Keyword || kind == TokenKind.IntegerLiteral || kind == TokenKind.TextLiteral || kind == TokenKind.SemanticLiteral
+}
+
+func SpacedOperator(kind TokenKind) bool {
+    return kind == TokenKind.BinaryOperator || kind == TokenKind.DefinitionOperator || kind == TokenKind.AssignmentOperator || kind == TokenKind.ShortDeclarationOperator
+}
+
+func Adjacency(left TokenKind, right TokenKind) Separation {
+    if left == TokenKind.OpenParen || left == TokenKind.OpenTypeBracket || left == TokenKind.OpenIndexBracket || left == TokenKind.Dot || left == TokenKind.UnaryOperator {
+        return Separation.Tight
+    }
+    if right == TokenKind.CloseParen || right == TokenKind.CloseTypeBracket || right == TokenKind.CloseIndexBracket ||
+        right == TokenKind.CloseCompositeBrace || right == TokenKind.Dot || right == TokenKind.Comma ||
+        right == TokenKind.Semicolon || right == TokenKind.OptionalMark {
+        return Separation.Tight
+    }
+    if left == TokenKind.CloseTypeBracket && WordLike(right) {
+        return Separation.Tight
+    }
+    if right == TokenKind.OpenParen {
+        if left == TokenKind.Keyword {
+            return Separation.Space
+        }
+        return Separation.Tight
+    }
+    if right == TokenKind.OpenTypeBracket || right == TokenKind.OpenIndexBracket || right == TokenKind.OpenCompositeBrace {
+        return Separation.Tight
+    }
+    if left == TokenKind.Comma || left == TokenKind.FieldColon || left == TokenKind.CaseColon || SpacedOperator(left) || SpacedOperator(right) {
+        return Separation.Space
+    }
+    if WordLike(left) && (WordLike(right) || right == TokenKind.UnaryOperator) {
+        return Separation.Space
+    }
+    if (left == TokenKind.CloseParen || left == TokenKind.CloseIndexBracket || left == TokenKind.CloseCompositeBrace) && WordLike(right) {
+        return Separation.Space
+    }
+    return Separation.Tight
+}
+
+func Parse(path fs.Path, content text) Source {
+    return [the unique Source from one exact Oi 0.0.1 lexical and grammar judgment over UTF-8 {content} at {path};
+        Keyword is exactly package, import, const, type, struct, enum, func, effect, uses, contract, var, if, else, switch, case, default,
+        for, in, select, return, break, continue, stop, handoff, oi, await, detach, text, bool, int, unit, task, outcome, channel, sender,
+        receiver, failure, true, false, or none; every other valid name maps to Identifier;
+        decimal integers, exact text literals, complete semantic expressions, and line comments map to their matching literal or Comment kind;
+        context classifies ! and - as unary; * / % + - == != < <= > >= ~= && || as binary; equals as definition or assignment;
+        colon-equals as short declaration; colon as field or case; and classifies
+        type and index brackets, structural and composite braces; remaining punctuation maps to Dot, Comma, Semicolon, parens, or OptionalMark;
+        maximal ASCII space-tab runs map to Whitespace, each CRLF, CR, or LF maps to one LineBreak, and any otherwise unmapped byte maps to Invalid;
+        preserve every exact Lexeme byte; one text literal, semantic expression, or comment excluding its physical line ending is one opaque token;
+        Location is path followed by at-sign, zero-based UTF-8 byte offset, one-based line, and one-based UTF-8 byte column separated by colons;
+        CRLF is one line ending and lone CR or LF is one line ending; SemanticRanges are zero-based half-open UTF-8 byte ranges in source order]
+}
+
+func Validate(source Source, available []text) []diagnostic.Diagnostic {
+    return [all deterministic typed diagnostics decidable from {source} under the already loaded exact Oi 0.0.1 core, in Location order;
+        validate the closed token mapping, lexical and grammar structure, terminators, declarations, signatures, statements, semantic boundaries,
+        lowercase resultless main shape when present, and declared effect authorities against {available}; use the offending token Location,
+        a concrete core category, phase, and detail, and empty Trace; do not resolve imports, execute source, inspect another file, or encode records as text]
+}
+
+func Equivalent(before Source, after Source) bool {
+    return [true exactly when {before} and {after} have the same Path and the same grammar-derived typed token sequence after removing Whitespace and LineBreak,
+        equating Semicolon with the corresponding inserted terminator and ignoring an optional trailing Comma only in a multiline import, parameter,
+        argument, or composite-element list; compare every other TokenKind and Lexeme plus comment attachment and order, but not formatting-derived Location
+        or SemanticRanges offsets; require every TextLiteral and SemanticLiteral Lexeme to remain byte-identical]
+}

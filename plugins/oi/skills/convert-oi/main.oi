@@ -1,0 +1,14 @@
+package main
+
+import "std/fs"
+import "oi/skills/convert-oi/internal/convert"
+import "oi/skills/convert-oi/internal/report"
+
+effect Reply(value report.ConversionReport) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main(source fs.Path, destination fs.Path, module text, mode convert.Mode, proof text?) {
+    Reply(convert.Convert(source, destination, module, mode, proof))
+}

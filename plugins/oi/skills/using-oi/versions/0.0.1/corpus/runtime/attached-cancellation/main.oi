@@ -1,0 +1,16 @@
+package main
+
+func ImmediateFailure(change text) text {
+    stop("CANCEL_SOURCE_FAILURE", change)
+}
+
+func SlowWork(change text) text {
+    var first text = [begin slow review of {change}]
+    var second text = [continue slow review after {first}]
+    return [finish slow review after {second}]
+}
+
+func main(change text) {
+    oi ImmediateFailure(change)
+    oi SlowWork(change)
+}

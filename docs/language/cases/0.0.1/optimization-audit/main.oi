@@ -1,0 +1,99 @@
+package main
+
+import "std/diagnostic"
+import "std/fs"
+
+type AuditPhase enum {
+    Baseline
+    Candidate
+    Verify
+    Complete
+}
+
+type Observation struct {
+    Name text
+    Value int
+    Target int
+}
+
+type Metric struct {
+    Name text
+    Before int
+    After int
+    Target int
+}
+
+type Audit struct {
+    Metrics []Metric
+    Passed bool
+    Diagnostics []diagnostic.Diagnostic
+}
+
+effect Measure(target fs.Path, phase AuditPhase) []Observation {
+    uses optimize.measure
+    contract [measure one nonempty ordered metric set for {target} in {phase}, with stable names and targets across baseline and verification]
+}
+
+effect ApplyCandidate(target fs.Path, metric Observation, phase AuditPhase) unit {
+    uses optimize.change
+    contract [apply one candidate change to {target} for measured {metric} only in {phase}]
+}
+
+effect Reply(value Audit) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func AuditTarget(target fs.Path) Audit {
+    var phase AuditPhase = AuditPhase.Baseline
+    var before []Observation = Measure(target, phase)
+    if len(before) == 0 {
+        stop("MISSING_BASELINE_MEASUREMENT", "optimization audit requires metrics")
+    }
+
+    phase = AuditPhase.Candidate
+    ApplyCandidate(target, before[0], phase)
+    phase = AuditPhase.Verify
+    var after []Observation = Measure(target, phase)
+    if len(after) != len(before) {
+        stop("MEASUREMENT_SET_DRIFT", "baseline and verification metric counts differ")
+    }
+
+    var metrics []Metric = []Metric{}
+    var diagnostics []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
+    var passed bool = true
+    var index int = 0
+    for index < len(before) {
+        if before[index].Name != after[index].Name || before[index].Target != after[index].Target {
+            stop("MEASUREMENT_IDENTITY_DRIFT", before[index].Name)
+        }
+        var metric Metric = Metric{
+            Name: before[index].Name,
+            Before: before[index].Value,
+            After: after[index].Value,
+            Target: before[index].Target,
+        }
+        metrics = append(metrics, metric)
+        if metric.After >= metric.Before {
+            passed = false
+            diagnostics = append(
+                diagnostics,
+                diagnostic.New("NO_MEASURED_IMPROVEMENT", "runtime", "main.oi:1:1", metric.Name),
+            )
+        }
+        if metric.After > metric.Target {
+            passed = false
+            diagnostics = append(
+                diagnostics,
+                diagnostic.New("OPTIMIZATION_TARGET_MISSED", "runtime", "main.oi:1:1", metric.Name),
+            )
+        }
+        index = index + 1
+    }
+    phase = AuditPhase.Complete
+    return Audit{Metrics: metrics, Passed: passed, Diagnostics: diagnostics}
+}
+
+func main(target fs.Path) {
+    Reply(AuditTarget(target))
+}

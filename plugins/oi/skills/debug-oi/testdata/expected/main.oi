@@ -1,0 +1,318 @@
+package main
+
+import "std/diagnostic"
+import "std/fs"
+import "oi/skills/debug-oi/internal/debug"
+import "oi/skills/debug-oi/internal/report"
+
+type ExpectedSnapshot struct {
+    Status report.Status
+    CheckEvents bool
+    Events []report.Event
+    Diagnostics []diagnostic.Diagnostic
+    RequiredTranscriptEntries []text
+}
+
+type CheckReport struct {
+    Passed bool
+    Diagnostics []diagnostic.Diagnostic
+}
+
+func SameText(left []text, right []text) bool {
+    if len(left) != len(right) {
+        return false
+    }
+    var indexes []int = [the integer indexes zero through len of {left} minus one in ascending order]
+    for index in indexes {
+        if left[index] != right[index] {
+            return false
+        }
+    }
+    return true
+}
+
+func SameEvents(left []report.Event, right []report.Event) bool {
+    if len(left) != len(right) {
+        return false
+    }
+    var indexes []int = [the integer indexes zero through len of {left} minus one in ascending order]
+    for index in indexes {
+        if left[index] != right[index] {
+            return false
+        }
+    }
+    return true
+}
+
+func SameDiagnostics(left []diagnostic.Diagnostic, right []diagnostic.Diagnostic) bool {
+    if len(left) != len(right) {
+        return false
+    }
+    var indexes []int = [the integer indexes zero through len of {left} minus one in ascending order]
+    for index in indexes {
+        var actual diagnostic.Diagnostic = left[index]
+        var expected diagnostic.Diagnostic = right[index]
+        if actual.Category != expected.Category || actual.Phase != expected.Phase || actual.Location != expected.Location ||
+            actual.Detail != expected.Detail || !SameText(actual.Trace, expected.Trace) {
+            return false
+        }
+    }
+    return true
+}
+
+func SameTrace(left report.DebugTrace, right report.DebugTrace) bool {
+    return left.Status == right.Status && SameEvents(left.Events, right.Events) && SameDiagnostics(left.Diagnostics, right.Diagnostics) &&
+        SameText(left.RequiredTranscriptEntries, right.RequiredTranscriptEntries)
+}
+
+func ContainsText(values []text, wanted text) bool {
+    for value in values {
+        if value == wanted {
+            return true
+        }
+    }
+    return false
+}
+
+func SameTextMembers(left []text, right []text) bool {
+    if len(left) != len(right) {
+        return false
+    }
+    for value in left {
+        if !ContainsText(right, value) {
+            return false
+        }
+    }
+    return true
+}
+
+func EffectIDs(value report.DebugTrace) []text {
+    var result []text = []text{}
+    for event in value.Events {
+        if event.Kind == report.EventKind.Effect {
+            result = append(result, event.Detail)
+        }
+    }
+    return result
+}
+
+func Matches(actual report.DebugTrace, expected ExpectedSnapshot) bool {
+    if actual.Status != expected.Status || !SameDiagnostics(actual.Diagnostics, expected.Diagnostics) ||
+        !SameText(actual.RequiredTranscriptEntries, expected.RequiredTranscriptEntries) {
+        return false
+    }
+    if expected.CheckEvents && !SameEvents(actual.Events, expected.Events) {
+        return false
+    }
+    return true
+}
+
+func TraceTranscript() []debug.EffectResult {
+    return []debug.EffectResult{
+        debug.EffectResult{
+            Kind: debug.EffectResultKind.Returned,
+            OperationID: "root|root/a1|testdata/trace/main.oi:15:16|1",
+            Value: debug.EffectValue{Canonical: "resolved", NamedIdentity: none},
+            Failure: none,
+        },
+        debug.EffectResult{
+            Kind: debug.EffectResultKind.Returned,
+            OperationID: "root|root/a0|testdata/trace/main.oi:21:5|1",
+            Value: debug.EffectValue{Canonical: "unit", NamedIdentity: none},
+            Failure: none,
+        },
+    }
+}
+
+func ExpectedTrace() ExpectedSnapshot {
+    return ExpectedSnapshot{
+        Status: report.Status.Pass,
+        CheckEvents: true,
+        Events: []report.Event{
+            report.Event{Sequence: 1, Kind: report.EventKind.Enter, Location: "testdata/trace/main.oi:20:1", Detail: "root/a0"},
+            report.Event{Sequence: 2, Kind: report.EventKind.Bind, Location: "testdata/trace/main.oi:20:11", Detail: "known"},
+            report.Event{Sequence: 3, Kind: report.EventKind.Enter, Location: "testdata/trace/main.oi:13:1", Detail: "root/a1"},
+            report.Event{Sequence: 4, Kind: report.EventKind.Bind, Location: "testdata/trace/main.oi:13:14", Detail: "known"},
+            report.Event{Sequence: 5, Kind: report.EventKind.Branch, Location: "testdata/trace/main.oi:14:5", Detail: "true"},
+            report.Event{Sequence: 6, Kind: report.EventKind.Effect, Location: "testdata/trace/main.oi:15:16", Detail: "root|root/a1|testdata/trace/main.oi:15:16|1"},
+            report.Event{Sequence: 7, Kind: report.EventKind.Return, Location: "testdata/trace/main.oi:15:9", Detail: "resolved"},
+            report.Event{Sequence: 8, Kind: report.EventKind.Effect, Location: "testdata/trace/main.oi:21:5", Detail: "root|root/a0|testdata/trace/main.oi:21:5|1"},
+            report.Event{Sequence: 9, Kind: report.EventKind.Return, Location: "testdata/trace/main.oi:22:1", Detail: "unit"},
+        },
+        Diagnostics: []diagnostic.Diagnostic{},
+        RequiredTranscriptEntries: []text{},
+    }
+}
+
+func OperationTranscript() []debug.EffectResult {
+    return []debug.EffectResult{
+        debug.EffectResult{
+            Kind: debug.EffectResultKind.Returned,
+            OperationID: "root|root/a1|testdata/operation-identity/main.oi:11:35|1",
+            Value: debug.EffectValue{Canonical: "first", NamedIdentity: none},
+            Failure: none,
+        },
+        debug.EffectResult{
+            Kind: debug.EffectResultKind.Returned,
+            OperationID: "root|root/a1|testdata/operation-identity/main.oi:11:35|2",
+            Value: debug.EffectValue{Canonical: "second", NamedIdentity: none},
+            Failure: none,
+        },
+        debug.EffectResult{
+            Kind: debug.EffectResultKind.Returned,
+            OperationID: "root/0|root/0/a0|testdata/operation-identity/main.oi:17:12|1",
+            Value: debug.EffectValue{Canonical: "left", NamedIdentity: none},
+            Failure: none,
+        },
+        debug.EffectResult{
+            Kind: debug.EffectResultKind.Returned,
+            OperationID: "root/1|root/1/a0|testdata/operation-identity/main.oi:17:12|1",
+            Value: debug.EffectValue{Canonical: "right", NamedIdentity: none},
+            Failure: none,
+        },
+    }
+}
+
+func ExpectedOperationIDs() []text {
+    return []text{
+        "root|root/a1|testdata/operation-identity/main.oi:11:35|1",
+        "root|root/a1|testdata/operation-identity/main.oi:11:35|2",
+        "root/0|root/0/a0|testdata/operation-identity/main.oi:17:12|1",
+        "root/1|root/1/a0|testdata/operation-identity/main.oi:17:12|1",
+    }
+}
+
+func ChannelJournal() []text {
+    var channel debug.ChannelIdentity = debug.ChannelIdentity{
+        ActivationID: "root/a0",
+        CreationIndex: 0,
+    }
+    var sender debug.SenderIdentity = debug.SenderIdentity{Channel: channel, CopyIndex: 1}
+    var receiver debug.ReceiverIdentity = debug.ReceiverIdentity{Channel: channel}
+    var message debug.MessageIdentity = debug.MessageIdentity{Channel: channel, CommitIndex: 0}
+    var selection debug.SelectIdentity = debug.SelectIdentity{
+        ActivationID: "root/a0",
+        EncounterIndex: 0,
+    }
+    if debug.ChannelID(channel) != "root/a0/c0" || debug.SenderID(sender) != "root/a0/c0/s1" || debug.ReceiverID(receiver) != "root/a0/c0/r0" {
+        return []text{"INVALID_CHANNEL_IDENTITY"}
+    }
+    return []text{debug.SelectRecord(selection, 0, debug.MessageID(message))}
+}
+
+func ExpectedChannelRecord() text {
+    return "{root/a0/select0,0,root/a0/c0/m0}"
+}
+
+func ExpectedChildFailure() ExpectedSnapshot {
+    return ExpectedSnapshot{
+        Status: report.Status.Fail,
+        CheckEvents: false,
+        Events: []report.Event{},
+        Diagnostics: []diagnostic.Diagnostic{
+            diagnostic.Diagnostic{
+                Category: "IMPLICIT_SOURCE_FAILURE",
+                Phase: "runtime",
+                Location: "testdata/child-failure/main.oi:8:5",
+                Detail: "implicit child failed",
+                Trace: []text{"implicit-join@testdata/child-failure/main.oi:23:1"},
+            },
+        },
+        RequiredTranscriptEntries: []text{},
+    }
+}
+
+func SameNamedIdentity(left debug.Program, right debug.Program) bool {
+    if len(left.NamedTypes) != 1 || len(right.NamedTypes) != 1 {
+        return false
+    }
+    return left.NamedTypes[0].Identity == right.NamedTypes[0].Identity
+}
+
+func BindingOracleDiffers(passPlan debug.LoadPlan, failPlan debug.LoadPlan) bool {
+    if passPlan.Status != debug.LoadStatus.Valid || passPlan.BindingStatus != debug.BindingStatus.Crossed || len(passPlan.InitialSlots) != 1 ||
+        len(passPlan.Diagnostics) != 0 || len(passPlan.BindingDiagnostics) != 0 {
+        return false
+    }
+    if failPlan.Status != debug.LoadStatus.Valid || failPlan.BindingStatus != debug.BindingStatus.Rejected || len(failPlan.InitialSlots) != 0 ||
+        len(failPlan.Diagnostics) != 0 || len(failPlan.BindingDiagnostics) != 1 {
+        return false
+    }
+    var item diagnostic.Diagnostic = failPlan.BindingDiagnostics[0]
+    return SameNamedIdentity(passPlan.Program, failPlan.Program) && item.Category == "TYPE_CONTRACT_MISMATCH" && item.Phase == "input binding"
+}
+
+func HasBindingContractFailure(value report.DebugTrace) bool {
+    return value.Status == report.Status.Fail && len(value.Diagnostics) == 1 && value.Diagnostics[0].Category == "TYPE_CONTRACT_MISMATCH" &&
+        value.Diagnostics[0].Phase == "input binding"
+}
+
+func Failure(name text) diagnostic.Diagnostic {
+    return diagnostic.New("DEBUG_EXPECTATION_MISMATCH", "test", "testdata/expected/main.oi:1:1", name)
+}
+
+func Verify(traceTarget fs.Path, childTarget fs.Path, operationTarget fs.Path, channelTarget fs.Path, bindingPassTarget fs.Path,
+    bindingFailTarget fs.Path, storeTarget fs.Path) CheckReport {
+    var traceBindings []debug.Binding = []debug.Binding{debug.Binding{Name: "key", Value: "known"}}
+    var firstTrace report.DebugTrace = debug.Trace(traceTarget, traceBindings, []text{}, TraceTranscript())
+    var secondTrace report.DebugTrace = debug.Trace(traceTarget, traceBindings, []text{}, TraceTranscript())
+    var firstChild report.DebugTrace = debug.Trace(childTarget, []debug.Binding{}, []text{}, []debug.EffectResult{})
+    var secondChild report.DebugTrace = debug.Trace(childTarget, []debug.Binding{}, []text{}, []debug.EffectResult{})
+    var firstOperations report.DebugTrace = debug.Trace(operationTarget, []debug.Binding{}, []text{}, OperationTranscript())
+    var secondOperations report.DebugTrace = debug.Trace(operationTarget, []debug.Binding{}, []text{}, OperationTranscript())
+    var firstChannel report.DebugTrace = debug.Trace(channelTarget, []debug.Binding{}, ChannelJournal(), []debug.EffectResult{})
+    var secondChannel report.DebugTrace = debug.Trace(channelTarget, []debug.Binding{}, ChannelJournal(), []debug.EffectResult{})
+    var namedBindings []debug.Binding = []debug.Binding{debug.Binding{Name: "key", Value: "known"}}
+    var passLoad outcome[debug.LoadPlan] = capture(debug.CompileTarget(bindingPassTarget, namedBindings))
+    var failLoad outcome[debug.LoadPlan] = capture(debug.CompileTarget(bindingFailTarget, namedBindings))
+    var firstBindingPass report.DebugTrace = debug.Trace(bindingPassTarget, namedBindings, []text{}, []debug.EffectResult{})
+    var secondBindingPass report.DebugTrace = debug.Trace(bindingPassTarget, namedBindings, []text{}, []debug.EffectResult{})
+    var firstBindingFail report.DebugTrace = debug.Trace(bindingFailTarget, namedBindings, []text{}, []debug.EffectResult{})
+    var secondBindingFail report.DebugTrace = debug.Trace(bindingFailTarget, namedBindings, []text{}, []debug.EffectResult{})
+    var storeBindings []debug.Binding = []debug.Binding{debug.Binding{Name: "index", Value: "1"}}
+    var firstStore report.DebugTrace = debug.Trace(storeTarget, storeBindings, []text{}, []debug.EffectResult{})
+    var secondStore report.DebugTrace = debug.Trace(storeTarget, storeBindings, []text{}, []debug.EffectResult{})
+    var diagnostics []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
+    if !Matches(firstTrace, ExpectedTrace()) || !SameTrace(firstTrace, secondTrace) {
+        diagnostics = append(diagnostics, Failure("trace snapshot or repeated run differs"))
+    }
+    if !Matches(firstChild, ExpectedChildFailure()) || !SameTrace(firstChild, secondChild) {
+        diagnostics = append(diagnostics, Failure("child snapshot or repeated run differs"))
+    }
+    if firstOperations.Status != report.Status.Pass || !SameTrace(firstOperations, secondOperations) ||
+        !SameTextMembers(EffectIDs(firstOperations), ExpectedOperationIDs()) {
+        diagnostics = append(diagnostics, Failure("dynamic operation identities or repeated run differ"))
+    }
+    if !SameText(ChannelJournal(), []text{ExpectedChannelRecord()}) || firstChannel.Status != report.Status.Pass || !SameTrace(firstChannel, secondChannel) {
+        diagnostics = append(diagnostics, Failure("channel journal identity or repeated run differs"))
+    }
+    if passLoad.Ok {
+        if failLoad.Ok {
+            if !BindingOracleDiffers(passLoad.Value, failLoad.Value) {
+                diagnostics = append(diagnostics, Failure("same type identity contracts did not produce distinct binding plans"))
+            }
+        } else {
+            diagnostics = append(diagnostics, Failure("rejecting binding oracle effect failed"))
+        }
+    } else {
+        diagnostics = append(diagnostics, Failure("accepting binding oracle effect failed"))
+    }
+    if firstBindingPass.Status != report.Status.Pass || !SameTrace(firstBindingPass, secondBindingPass) ||
+        !HasBindingContractFailure(firstBindingFail) || !SameTrace(firstBindingFail, secondBindingFail) {
+        diagnostics = append(diagnostics, Failure("binding crossing traces or repeated runs differ"))
+    }
+    if firstStore.Status != report.Status.Pass || !SameTrace(firstStore, secondStore) {
+        diagnostics = append(diagnostics, Failure("field or dynamic index Store trace differs"))
+    }
+    return CheckReport{Passed: len(diagnostics) == 0, Diagnostics: diagnostics}
+}
+
+effect Reply(value CheckReport) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the fixture caller]
+}
+
+func main(traceTarget fs.Path, childTarget fs.Path, operationTarget fs.Path, channelTarget fs.Path, bindingPassTarget fs.Path,
+    bindingFailTarget fs.Path, storeTarget fs.Path) {
+    Reply(Verify(traceTarget, childTarget, operationTarget, channelTarget, bindingPassTarget, bindingFailTarget, storeTarget))
+}

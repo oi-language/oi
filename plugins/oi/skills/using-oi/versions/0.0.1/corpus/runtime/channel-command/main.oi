@@ -1,0 +1,28 @@
+package main
+
+type Command enum {
+    Continue
+    Stop
+}
+
+func Worker(commands receiver[Command]) text {
+    command := receive(commands)
+    switch command {
+    case Command.Stop:
+        return "stopped"
+    default:
+        return "continued"
+    }
+}
+
+effect Reply(value text) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main() {
+    commands := channel[Command](1)
+    worker := oi Worker(commands.Receive)
+    send(commands.Send, Command.Stop)
+    Reply(await worker)
+}

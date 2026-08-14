@@ -1,0 +1,11 @@
+{
+  "name": "oi",
+  "version": "0.0.1",
+  "description": "A versioned language for structured Agent Skills with a toolchain written in Oi.",
+  "author": { "name": "oi-language" },
+  "homepage": "https://github.com/oi-language/oi",
+  "repository": "https://github.com/oi-language/oi",
+  "license": "MIT",
+  "keywords": ["oi", "agent", "skill", "structured", "language"],
+  "skills": "./skills/"
+}

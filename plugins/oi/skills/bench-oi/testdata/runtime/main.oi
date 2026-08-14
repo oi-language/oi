@@ -1,0 +1,23 @@
+package main
+
+func Fail(input text) text {
+    stop("BENCH_CHILD_FAILURE", input)
+}
+
+func main(input text) {
+    firstTask := oi Fail(input)
+    first := capture(await firstTask)
+    second := capture(await firstTask)
+    if first.Ok {
+        stop("BENCH_REPLAY_MISMATCH", "failed child unexpectedly passed")
+    } else {
+        if second.Ok {
+            stop("BENCH_REPLAY_MISMATCH", "failed child unexpectedly passed")
+        } else {
+            if first.Failure.Category != second.Failure.Category || first.Failure.Detail != second.Failure.Detail {
+                stop("BENCH_REPLAY_MISMATCH", "completed child result changed on replay")
+            }
+            stop(first.Failure.Category, first.Failure.Detail)
+        }
+    }
+}

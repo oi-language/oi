@@ -1,0 +1,87 @@
+package main
+
+type Area enum {
+    Correctness
+    Security
+    Maintainability
+}
+
+type Finding struct {
+    Area Area
+    Location text
+    Evidence text
+    Severity int
+}
+
+type ReviewResult struct {
+    Summary text
+    Findings []Finding
+}
+
+effect Reply(value ReviewResult) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func ReviewPart(change text, area Area, updates sender[Finding]) unit {
+    var finding Finding
+    switch area {
+    case Area.Correctness:
+        finding = Finding{Area: area, Location: "correctness", Evidence: [correctness evidence for {change}], Severity: 3}
+    case Area.Security:
+        finding = Finding{Area: area, Location: "security", Evidence: [security evidence for {change}], Severity: 2}
+    case Area.Maintainability:
+        finding = Finding{Area: area, Location: "maintainability", Evidence: [maintainability evidence for {change}], Severity: 1}
+    }
+    send(updates, finding)
+}
+
+func Review(change text) ReviewResult {
+    var updates channel[Finding] = channel[Finding](3)
+    oi ReviewPart(change, Area.Correctness, updates.Send)
+    oi ReviewPart(change, Area.Security, updates.Send)
+    oi ReviewPart(change, Area.Maintainability, updates.Send)
+    var summary text = [three isolated review areas for {change}]
+    var correctness Finding
+    var security Finding
+    var maintainability Finding
+    var hasCorrectness bool = false
+    var hasSecurity bool = false
+    var hasMaintainability bool = false
+    var received int = 0
+    for received < 3 {
+        var finding Finding = receive(updates.Receive)
+        switch finding.Area {
+        case Area.Correctness:
+            if hasCorrectness {
+                stop("DUPLICATE_REVIEW_AREA", "Correctness")
+            }
+            correctness = finding
+            hasCorrectness = true
+        case Area.Security:
+            if hasSecurity {
+                stop("DUPLICATE_REVIEW_AREA", "Security")
+            }
+            security = finding
+            hasSecurity = true
+        case Area.Maintainability:
+            if hasMaintainability {
+                stop("DUPLICATE_REVIEW_AREA", "Maintainability")
+            }
+            maintainability = finding
+            hasMaintainability = true
+        }
+        received = received + 1
+    }
+    if !hasCorrectness || !hasSecurity || !hasMaintainability {
+        stop("MISSING_REVIEW_AREA", change)
+    }
+    return ReviewResult{
+        Summary: summary,
+        Findings: []Finding{correctness, security, maintainability},
+    }
+}
+
+func main(change text) {
+    Reply(Review(change))
+}

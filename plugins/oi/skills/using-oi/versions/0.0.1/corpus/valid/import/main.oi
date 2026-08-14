@@ -1,0 +1,16 @@
+package main
+
+import "oi/corpus/valid/import/checks"
+
+func Check(value text) bool {
+    return checks.Check(value)
+}
+
+effect Reply(value bool) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main(value text) {
+    Reply(Check(value))
+}

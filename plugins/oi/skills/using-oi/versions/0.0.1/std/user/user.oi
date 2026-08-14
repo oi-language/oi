@@ -1,0 +1,20 @@
+package user
+
+type Prompt struct {
+    Question text
+    Context text
+}
+
+type Answer struct {
+    Value text
+}
+
+effect Ask(prompt Prompt) Answer {
+    uses user.interact
+    contract [ask {prompt.Question} with context {prompt.Context} and return exactly one typed answer]
+}
+
+effect Respond(value text) unit {
+    uses user.respond
+    contract [deliver {value} exactly once to the user]
+}

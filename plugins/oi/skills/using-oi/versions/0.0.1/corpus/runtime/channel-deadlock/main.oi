@@ -1,0 +1,13 @@
+package main
+
+func Fill(output sender[text]) unit {
+    send(output, "first")
+    send(output, "second")
+}
+
+func main() {
+    link := channel[text](1)
+    worker := oi Fill(link.Send)
+    await worker
+    receive(link.Receive)
+}

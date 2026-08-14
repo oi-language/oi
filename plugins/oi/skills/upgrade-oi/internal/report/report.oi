@@ -1,0 +1,55 @@
+package report
+
+import "std/diagnostic"
+
+type Compatibility enum {
+    Compatible
+    Incompatible
+    Unavailable
+}
+
+type Change struct {
+    Category text
+    Location text
+    Before text
+    After text
+    Automatic bool
+}
+
+type UpgradeReport struct {
+    SourceVersion text?
+    TargetVersion text
+    Compatibility Compatibility
+    Changes []Change
+    Diagnostics []diagnostic.Diagnostic
+}
+
+func Compatible(sourceVersion text?, targetVersion text) UpgradeReport {
+    return UpgradeReport{
+        SourceVersion: sourceVersion,
+        TargetVersion: targetVersion,
+        Compatibility: Compatibility.Compatible,
+        Changes: []Change{},
+        Diagnostics: []diagnostic.Diagnostic{},
+    }
+}
+
+func Incompatible(sourceVersion text?, targetVersion text, diagnostics []diagnostic.Diagnostic) UpgradeReport {
+    return UpgradeReport{
+        SourceVersion: sourceVersion,
+        TargetVersion: targetVersion,
+        Compatibility: Compatibility.Incompatible,
+        Changes: []Change{},
+        Diagnostics: diagnostics,
+    }
+}
+
+func Unavailable(sourceVersion text?, targetVersion text, diagnostics []diagnostic.Diagnostic) UpgradeReport {
+    return UpgradeReport{
+        SourceVersion: sourceVersion,
+        TargetVersion: targetVersion,
+        Compatibility: Compatibility.Unavailable,
+        Changes: []Change{},
+        Diagnostics: diagnostics,
+    }
+}

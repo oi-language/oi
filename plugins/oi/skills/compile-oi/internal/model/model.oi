@@ -1,0 +1,302 @@
+package model
+
+import "std/fs"
+
+type DeclarationKind enum {
+    Const
+    Type
+    Function
+    Effect
+}
+
+type TypeShapeKind enum {
+    Builtin
+    Named
+    Slice
+    Optional
+    Struct
+    Enum
+    Task
+    Outcome
+    Channel
+    Sender
+    Receiver
+}
+
+type SourcePosition struct {
+    Path text
+    Line int
+    Column int
+    Location text
+    SourceOrder int
+}
+
+type TypeNodeOrigin struct {
+    Token text
+    Position SourcePosition
+}
+
+type TypeShape struct {
+    Kind TypeShapeKind
+    Name text
+    NodePath []int
+    Labels []text
+    Elements []TypeShape
+    ContractSource text
+    Origin TypeNodeOrigin
+}
+
+type Declaration struct {
+    Name text
+    Kind DeclarationKind
+    Exported bool
+    Location text
+    Parameters []Parameter
+    ResultSource text?
+    Result TypeShape
+    HasResult bool
+    TypeSource text?
+    Underlying TypeShape
+    HasUnderlying bool
+}
+
+type Import struct {
+    Path text
+    Location text
+}
+
+type Parameter struct {
+    Name text
+    TypeSource text
+    Type TypeShape
+    Location text
+}
+
+type ResultTransformKind enum {
+    WrapTask
+    AwaitTask
+    WrapOutcome
+    IndexElement
+    SelectField
+}
+
+type ResultTransform struct {
+    Kind ResultTransformKind
+    Label text
+    Location text
+}
+
+type Entry struct {
+    Location text
+    Parameters []Parameter
+    ResultSource text?
+    ValueReturnLocations []text
+}
+
+type CallSite struct {
+    ID text
+    Caller text
+    Target text
+    Location text
+    Position SourcePosition
+    Arguments []Argument
+    ResultUsed bool
+    ResultTypeSource text
+    ResultTarget TypeShape
+    HasResultTarget bool
+    ResultTargetCallID text
+    ResultTransforms []ResultTransform
+}
+
+type Argument struct {
+    TypeSource text
+    Type TypeShape
+    Known bool
+    ProducerCallID text
+    Location text
+}
+
+type TypeReference struct {
+    Name text
+    Location text
+}
+
+type ConversionSite struct {
+    SourceType text
+    TargetType text
+    Source TypeShape
+    Target TypeShape
+    SourceKnown bool
+    SourceCallID text
+    Explicit bool
+    Location text
+}
+
+type RuntimeHandlePosition enum {
+    Local
+    OrdinaryParameter
+    AttachedOiParameter
+    Return
+    Embedded
+    Semantic
+    Effect
+    Detached
+    Handoff
+}
+
+type RuntimeHandleUse struct {
+    TypeSource text
+    Type TypeShape
+    Position RuntimeHandlePosition
+    Location text
+}
+
+type RuntimeHandleKind enum {
+    Task
+    Channel
+    Sender
+    Receiver
+}
+
+type ChannelConstruction struct {
+    ID text
+    Owner text
+    Payload TypeShape
+    CapacityConstant bool
+    CapacityValue int
+    CapacityToken text
+    CapacityPosition SourcePosition
+}
+
+type ReceiverUseKind enum {
+    Create
+    Direct
+    Assignment
+    Argument
+}
+
+type ReceiverConsumerScope enum {
+    DirectOwner
+    OrdinaryFunction
+    AttachedOiFunction
+}
+
+type ReceiverUse struct {
+    ReceiverIdentity text
+    Owner text
+    SourceHolder text
+    DestinationHolder text
+    Kind ReceiverUseKind
+    ConsumerScope ReceiverConsumerScope
+    ConsumerTarget text
+    ArgumentIndex int
+    Position SourcePosition
+}
+
+type TransferKind enum {
+    Detach
+    Handoff
+}
+
+type TransferDurability enum {
+    Durable
+    RuntimeHandle
+    Unresolved
+}
+
+type TransferDestinationKind enum {
+    HostRegistry
+    NamedActivation
+}
+
+type TransferArgument struct {
+    TypeSource text
+    Type TypeShape
+    Known bool
+    ProducerCallID text
+    Durability TransferDurability
+    HasRuntimeHandleOrigin bool
+    RuntimeHandleOrigin TypeNodeOrigin
+    Position SourcePosition
+}
+
+type TransferUse struct {
+    Kind TransferKind
+    Owner text
+    SourceOwner text
+    DestinationKind TransferDestinationKind
+    DestinationOwner text
+    Target text
+    TargetPosition SourcePosition
+    Arguments []TransferArgument
+    Position SourcePosition
+}
+
+type TaskIntrinsicKind enum {
+    Status
+    Cancel
+}
+
+type TaskIntrinsicUse struct {
+    Kind TaskIntrinsicKind
+    Owner text
+    Target text
+    CallID text
+    SourceHolder text
+    HandleOwner text
+    HandleOwnerKnown bool
+    Argument Argument
+    ArgumentPosition SourcePosition
+    Position SourcePosition
+}
+
+type StaticFact struct {
+    Category text
+    Phase text
+    Location text
+    Detail text
+}
+
+type AuthorityUse struct {
+    Declaration text
+    Authority text
+    Position SourcePosition
+}
+
+type OptionalBoundaryKind enum {
+    DirectCapture
+}
+
+type OptionalBoundary struct {
+    Kind OptionalBoundaryKind
+    Caller text
+    OperandCallID text
+    Position SourcePosition
+}
+
+type ShardUse struct {
+    Caller text
+    Path text
+    Location text
+}
+
+type SourceFile struct {
+    Path fs.Path
+    Package text
+    Imports []Import
+    Declarations []Declaration
+    Entries []Entry
+    Calls []CallSite
+    RequiredShards []text
+    TypeReferences []TypeReference
+    Conversions []ConversionSite
+    RuntimeHandleUses []RuntimeHandleUse
+    ChannelConstructions []ChannelConstruction
+    ReceiverUses []ReceiverUse
+    Transfers []TransferUse
+    TaskIntrinsicUses []TaskIntrinsicUse
+    StaticFacts []StaticFact
+    AuthorityUses []AuthorityUse
+    OptionalBoundaries []OptionalBoundary
+    ShardUses []ShardUse
+}

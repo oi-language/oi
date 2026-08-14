@@ -1,0 +1,21 @@
+package main
+
+effect ChildTrace(value text) unit {
+    uses caller.child-trace
+    contract [record child value {value} exactly once]
+}
+
+effect ParentTrace(value text) unit {
+    uses caller.parent-trace
+    contract [record parent value {value} exactly once]
+}
+
+func Review(change text) text {
+    ChildTrace(change)
+    return [review {change}]
+}
+
+func main(change text) {
+    oi Review(change)
+    ParentTrace("parent")
+}

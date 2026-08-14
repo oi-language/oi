@@ -1,0 +1,23 @@
+package main
+
+func FailExplicit() {
+    stop("EXPLICIT_SOURCE_FAILURE", "explicit child failed")
+}
+
+func FailImplicit() {
+    stop("IMPLICIT_SOURCE_FAILURE", "implicit child failed")
+}
+
+func main() {
+    var explicit task[unit] = oi FailExplicit()
+    oi FailImplicit()
+    var observed outcome[unit] = capture(await explicit)
+    if observed.Ok {
+        stop("EXPECTED_EXPLICIT_FAILURE", "explicit child unexpectedly passed")
+    } else {
+        var captured failure = observed.Failure
+        if len(captured.Trace) != 1 || captured.Trace[0] != "await@testdata/child-failure/main.oi:14:42" {
+            stop("EXPLICIT_FRAME_MISMATCH", "captured await frame differs")
+        }
+    }
+}

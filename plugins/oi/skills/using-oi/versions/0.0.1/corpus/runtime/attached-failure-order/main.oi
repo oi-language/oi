@@ -1,0 +1,16 @@
+package main
+
+func SlowFailure(change text) text {
+    var prepared text = [perform a deliberately long review of {change}]
+    var checked text = [check {prepared} again before stopping]
+    stop("LOWER_SOURCE_FAILURE", checked)
+}
+
+func FastFailure(change text) text {
+    stop("HIGHER_SOURCE_FAILURE", change)
+}
+
+func main(change text) {
+    oi SlowFailure(change)
+    oi FastFailure(change)
+}

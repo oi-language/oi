@@ -1,0 +1,18 @@
+package    main;
+
+type Result struct{Value text; Labels []text;};
+
+effect Reply(value Result) unit
+{
+uses caller.reply;
+contract [deliver {value} exactly once to the caller];
+};
+
+func main(
+value text,
+available []text,
+note text
+)
+{
+Reply(Result{Value:value, Labels:available,});
+};
