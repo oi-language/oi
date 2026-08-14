@@ -89,6 +89,14 @@ func main(name Name) {
 
 使用 issue 模板提交聚焦问题或提案，使用 pull request 模板说明范围和验证方式。
 
+## 加入 Oi 用户群
+
+扫描下方二维码加入 Oi 飞书用户群。
+
+<p align="center">
+  <img src="assets/community/oi-feishu-group-qr.jpg" alt="加入 Oi 飞书用户群的二维码" width="280">
+</p>
+
 ## License
 
 除非文件或目录另有说明，Oi 的源代码、文档和仓库资产均采用 [MIT License](LICENSE)。

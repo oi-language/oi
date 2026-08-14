@@ -89,6 +89,14 @@ When proposing a change, include the problem it solves, the constraint it preser
 
 Use the issue templates for focused bug reports and proposals, and the pull request template for scope and verification notes.
 
+## Join the Oi community
+
+Scan the QR code below to join the Oi Feishu user group.
+
+<p align="center">
+  <img src="assets/community/oi-feishu-group-qr.jpg" alt="QR code to join the Oi Feishu user group" width="280">
+</p>
+
 ## License
 
 Unless a file or directory states otherwise, Oi source code, documentation, and repository assets are released under the [MIT License](LICENSE).
