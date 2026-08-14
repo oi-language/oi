@@ -65,6 +65,8 @@ Detailed dynamics live in small runtime shards selected only by parsed construct
 
 Oi 0.0.1 deliberately has no `core.md`, `syntax.md`, `types.md`, `functions.md`, or eager bundle of base shards. That keeps first-load cost predictable while retaining completeness in one authority. Runtime shards are not alternate specifications: contradiction with the base file invalidates the snapshot.
 
+Host plugin packaging version is a separate axis from language snapshot identity. Marketplace and `plugin.json` versions exist so hosts can install and update the plugin; `oi.mod` still selects exactly one immutable snapshot under `using-oi/versions/`. A later plugin may bundle older snapshots. Matching numbers are coincidental.
+
 ## Deliberate exclusions
 
 Oi 0.0.1 excludes a package manager, binary compiler, VM, implicit global input, entry return channel, ambient agent registry, hidden retry, and permissive source reinterpretation. It does not infer unavailable effects, silently widen authority, or resume across a changed snapshot.

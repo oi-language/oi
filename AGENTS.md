@@ -20,8 +20,10 @@
 
 ## Versions
 - Every `.oi` resolves one exact version through its nearest `oi.mod`; never default, combine, or reinterpret.
-- Upgrade the language snapshot, stdlib, bundled tools, adapters, examples, corpus, and manifests as one release unit.
+- Language snapshot and plugin packaging version are independent axes. `oi.mod` and `using-oi/versions/<version>/` own language identity; marketplace.json and plugin.json own host install/update. Matching numbers are coincidental and will drift.
+- Upgrade the language snapshot, stdlib, bundled tools, adapters, examples, corpus, and execution-spec manifests as one language release unit. Marketplace and plugin.json bumps are a separate packaging unit and must not mutate a released snapshot.
 - After release, keep an older snapshot immutable and make upgrades explicit and compatibility-checked.
+- Ship a new snapshot only with a packaging-version bump so hosts deliver it. Keep the marketplace files and plugin.json files at one packaging version. Never treat packaging version as `oi.mod`, as `upgrade-oi` `installed` snapshots, or as a language git tag.
 
 ## Implementation boundaries
 - Do not add Python, JavaScript, TypeScript, Shell, PowerShell, batch, binary, executable test helpers, or a second runtime.

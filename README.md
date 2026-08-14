@@ -63,7 +63,7 @@ The lowercase, resultless `main` is invoked by the host with typed caller input.
 
 - ✅ Oi 0.0.1 defines one exact language snapshot, manifest-loaded runtime shards, a versioned standard library, examples, and a conformance corpus.
 - ✅ The bundled compiler, formatter, debugger, benchmark, converter, and upgrader are implemented in Oi; their `SKILL.md` adapters only load, map, and route.
-- ✅ Public specifications, manifests, adapters, corpus expectations, and cross-tool contracts describe and validate the same 0.0.1 snapshot.
+- ✅ Public specifications, execution-spec manifests, adapters, corpus expectations, and cross-tool contracts describe and validate the same 0.0.1 language snapshot.
 
 ## Documentation
 

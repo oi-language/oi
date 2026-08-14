@@ -14,4 +14,4 @@ This bootstrap adapter contains no Oi behavior, grammar, algorithm, or inferred 
 5. Statically validate the lowercase entry, bind typed caller inputs in declaration order, map reachable effects/authorities, and host-invoke `main`.
 6. Expose only concrete payloads from explicitly mapped reply effects.
 
-An absent exact version reports `UNSUPPORTED_VERSION`, installed/available versions, and explicit upgrader, then stops. Never read the base spec twice, invoke `main` as an Oi function, invent an entry return, treat reply names as built-ins, copy algorithms, or infer shard dependencies from prose. Runtime-token execution remains the runtime plan's work.
+An absent exact version reports `UNSUPPORTED_VERSION`, exact snapshot names under this skill's `versions/`, and explicit upgrader, then stops. Never read the base spec twice, invoke `main` as an Oi function, invent an entry return, treat reply names as built-ins, copy algorithms, infer shard dependencies from prose, or treat plugin packaging version as a language snapshot. Runtime-token execution remains the runtime plan's work.

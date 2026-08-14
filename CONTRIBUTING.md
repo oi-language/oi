@@ -8,6 +8,15 @@ Thanks for helping shape Oi. Oi 0.0.1 is a released, versioned language snapshot
 2. For visual changes, read the [brand guide](docs/brand.md) and use `oi-wordmark.svg` as the editable source for the wordmark.
 3. Open an issue when the proposal changes language semantics, module boundaries, versioning, or a public compatibility promise.
 
+## Versioning
+
+Oi has two version axes. Do not treat a matching number as one identity.
+
+- Language snapshot: the exact `oi <version>` in `oi.mod` and the immutable tree under `plugins/oi/skills/using-oi/versions/<version>/`.
+- Plugin packaging: the `version` fields in marketplace.json and `plugins/oi/.{cursor,claude,codex}-plugin/plugin.json`, used by host marketplaces to install and update.
+
+A packaging-only change must not mutate a released snapshot or reuse a language git tag. When adding a language snapshot, bump the packaging version so installed Agents receive it, and keep the marketplace files and plugin.json files at that same packaging version. `upgrade-oi` `installed` and `targetVersion` are snapshot names under `using-oi/versions/`, never the plugin packaging version.
+
 ## Scope and worktrees
 
 This repository contains Oi's public language specification, versioned standard library, Skill implementations, conformance corpus, documentation, static brand assets, and GitHub collaboration files. Keep a pull request focused on the part of that public tree it changes.

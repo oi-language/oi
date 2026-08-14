@@ -63,7 +63,7 @@ func main(name Name) {
 
 - ✅ Oi 0.0.1 定义了一个精确语言快照、由 manifest 加载的 runtime shard、版本化 standard library、示例和 conformance corpus。
 - ✅ 随附的 compiler、formatter、debugger、benchmark、converter 和 upgrader 均以 Oi 实现；它们的 `SKILL.md` adapter 只负责加载、映射和路由。
-- ✅ 公开 specification、manifest、adapter、corpus 预期和跨工具 contract 共同描述并验证同一个 0.0.1 快照。
+- ✅ 公开 specification、execution-spec manifest、adapter、corpus 预期和跨工具 contract 共同描述并验证同一个 0.0.1 语言快照。
 
 ## 文档
 
