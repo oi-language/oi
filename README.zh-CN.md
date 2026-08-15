@@ -3,7 +3,7 @@
   <h1>一门用于编写和运行 Agent Skill 的 Agent Language。</h1>
   <p>让目标明确，让边界可见，也给 Agent 留出思考空间。</p>
   <p><code>Oi oi oi.</code></p>
-  <p><a href="README.md">English README</a></p>
+  <p><a href="README.md">English</a></p>
 </div>
 
 <p align="center">
@@ -22,12 +22,12 @@ Oi 借鉴了 Go 的一些结构性经验：显式语言版本、module/package/i
 
 ## 为什么是 Oi？
 
-| 原则 | 含义 |
-| --- | --- |
-| 意图明确 | Skill 声明目标、输入、输出、约束和完成条件。 |
-| 边界内开放 | Agent 在声明的范围内选择方法，而不是猜测任务边界。 |
-| 模块可检查 | `.oi` 文件可以拆成 package，并通过显式 import 和语言版本组织。 |
-| 适配多种 harness | Codex、Claude、Cursor 及其他 harness 可以理解同一份模块图。 |
+| 原则             | 含义                                                           |
+| ---------------- | -------------------------------------------------------------- |
+| 意图明确         | Skill 声明目标、输入、输出、约束和完成条件。                   |
+| 边界内开放       | Agent 在声明的范围内选择方法，而不是猜测任务边界。             |
+| 模块可检查       | `.oi` 文件可以拆成 package，并通过显式 import 和语言版本组织。 |
+| 适配多种 harness | Codex、Claude、Cursor 及其他 harness 可以理解同一份模块图。    |
 
 ## 一眼看懂
 
