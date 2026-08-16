@@ -10,14 +10,6 @@ Canonical total order is: bool `false,true`; int mathematical ascending; text un
 
 Canonical serialization writes type identity, count, then map key/value or set element snapshots in canonical order. It never preserves literal insertion order or internal host representation.
 
-## Static collection diagnostics
-
-An unstable map key is `UNSTABLE_MAP_KEY` in phase `type` at the key type's first token, with Detail equal to its exact source spelling. An unstable set element is `UNSTABLE_SET_ELEMENT` at the element type's first token with the same phase and Detail rule.
-
-Iteration arity failure is `ITERATION_BINDING_ARITY_MISMATCH` in phase `type`. Detail is exactly `slice requires 1 or 2 bindings; found N`, `map requires 2 bindings; found N`, or `set requires 1 binding; found N`, where `N` is canonical decimal. Too many bindings locate the first extra binding token; too few locate `in`.
-
-Invalid collection builtin calls use `ARGUMENT_ARITY_MISMATCH`, `ARGUMENT_TYPE_MISMATCH`, or `RESULT_TYPE_MISMATCH` in phase `type`, at the call site, with the builtin name as Detail.
-
 ## Construction, indexing, and builtins
 
 Literal expressions evaluate left-to-right. After evaluating a candidate key/element, compare it with already accepted members. Equality with one already present stops runtime `DUPLICATE_KEY` at the later element expression before the literal becomes visible; no last-write-wins or deduplication applies.
