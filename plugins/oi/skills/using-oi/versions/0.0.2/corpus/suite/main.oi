@@ -1,0 +1,12 @@
+package main
+
+import "oi/corpus/0.0.2/suite/catalog"
+
+effect Reply(value []catalog.Case) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main() {
+    Reply(catalog.Cases())
+}

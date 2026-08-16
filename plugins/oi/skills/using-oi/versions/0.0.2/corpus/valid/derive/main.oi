@@ -1,0 +1,15 @@
+package main
+
+type Decision struct {
+    Key text
+    Score int
+}
+
+func DeriveDecisions(scores map[text]int) []Decision {
+    var decisions []Decision = derive [make one Decision for each {scores} entry in canonical key order]
+    return decisions
+}
+
+func main(scores map[text]int) {
+    var decisions []Decision = DeriveDecisions(scores)
+}

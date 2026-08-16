@@ -1,0 +1,81 @@
+package catalog
+
+type Phase enum {
+    Compile
+    Runtime
+}
+
+type Status enum {
+    Pass
+    StaticFail
+    RuntimeFail
+}
+
+type ReplyIdentity struct {
+    Type text
+    Digest text
+    Value text
+}
+
+type Case struct {
+    ID text
+    Target text
+    Phase Phase
+    Status Status
+    Category text
+    Reply ReplyIdentity?
+}
+
+func CompileCase(id text, target text, status Status, category text) Case {
+    return Case{
+        ID: id,
+        Target: target,
+        Phase: Phase.Compile,
+        Status: status,
+        Category: category,
+        Reply: none,
+    }
+}
+
+func RuntimeCase(id text, target text, category text) Case {
+    return Case{
+        ID: id,
+        Target: target,
+        Phase: Phase.Runtime,
+        Status: Status.RuntimeFail,
+        Category: category,
+        Reply: none,
+    }
+}
+
+func Cases() []Case {
+    return []Case{
+        CompileCase("manifest", "valid/manifest", Status.Pass, "none"),
+        CompileCase("collections", "valid/collections", Status.Pass, "none"),
+        CompileCase("derive", "valid/derive", Status.Pass, "none"),
+        CompileCase(
+            "missing-source-manifest",
+            "invalid/missing-source-manifest",
+            Status.StaticFail,
+            "MISSING_SOURCE_MANIFEST",
+        ),
+        CompileCase(
+            "unsorted-source-manifest",
+            "invalid/unsorted-source-manifest",
+            Status.StaticFail,
+            "SOURCE_MANIFEST_ORDER",
+        ),
+        CompileCase(
+            "unbounded-semantic-result",
+            "invalid/unbounded-semantic-result",
+            Status.StaticFail,
+            "UNBOUNDED_SEMANTIC_RESULT",
+        ),
+        RuntimeCase("missing-map-key", "runtime/missing-map-key", "MISSING_KEY"),
+        RuntimeCase(
+            "nondeterministic-derivation",
+            "runtime/nondeterministic-derivation",
+            "NONDETERMINISTIC_DERIVATION",
+        ),
+    }
+}

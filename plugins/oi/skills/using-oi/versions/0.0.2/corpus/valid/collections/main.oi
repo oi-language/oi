@@ -1,0 +1,61 @@
+package main
+
+type CollectionResult struct {
+    Indexed []int
+    Mapped []text
+    MappedValues []int
+    Members []text
+    HasMapKey bool
+    HasSetValue bool
+}
+
+func Build() CollectionResult {
+    var mapping map[text]int = map[text]int{
+        "bravo": 2,
+        "alpha": 1,
+    }
+    mapping = put(mapping, "charlie", 3)
+    mapping = put(mapping, "bravo", 20)
+    mapping = remove(mapping, "charlie")
+
+    var members set[text] = set[text]{"bravo", "alpha"}
+    members = add(members, "charlie")
+    members = add(members, "bravo")
+    members = remove(members, "charlie")
+
+    var indexed []int = []int{}
+    for index, value in []int{10, 20, 30} {
+        indexed = append(indexed, index)
+        indexed = append(indexed, value)
+    }
+
+    var mapped []text = []text{}
+    var mappedValues []int = []int{}
+    for key, value in mapping {
+        mapped = append(mapped, key)
+        mappedValues = append(mappedValues, value)
+    }
+
+    var orderedMembers []text = []text{}
+    for value in members {
+        orderedMembers = append(orderedMembers, value)
+    }
+
+    return CollectionResult{
+        Indexed: indexed,
+        Mapped: mapped,
+        MappedValues: mappedValues,
+        Members: orderedMembers,
+        HasMapKey: has(mapping, "bravo"),
+        HasSetValue: has(members, "alpha"),
+    }
+}
+
+effect Reply(value CollectionResult) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main() {
+    Reply(Build())
+}

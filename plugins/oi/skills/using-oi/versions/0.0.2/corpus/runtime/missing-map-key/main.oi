@@ -1,0 +1,6 @@
+package main
+
+func main() {
+    var mapping map[text]int = map[text]int{}
+    var value int = mapping["missing"]
+}

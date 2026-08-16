@@ -1,0 +1,10 @@
+package main
+
+type Decision enum {
+    Accept
+    Reject
+}
+
+func main() {
+    var decision Decision = derive [choose Accept or Reject]
+}
