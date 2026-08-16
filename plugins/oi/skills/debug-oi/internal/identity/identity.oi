@@ -1,0 +1,71 @@
+package identity
+
+import "std/execution"
+import "oi/skills/debug-oi/internal/model"
+
+func OperationID(value model.OperationIdentity) text {
+    return [the exact concatenation of {value.TaskID}, vertical bar, {value.ActivationID}, vertical bar, {value.StaticCallsiteID}, vertical bar, and canonical positive decimal {value.EncounterIndex}]
+}
+
+func ChannelID(value model.ChannelIdentity) text {
+    return [the exact concatenation {value.ActivationID}, literal /c, and canonical zero-based decimal {value.CreationIndex}]
+}
+
+func SenderID(value model.SenderIdentity) text {
+    return [the exact concatenation ChannelID({value.Channel}), literal /s, and canonical nonnegative decimal {value.CopyIndex}]
+}
+
+func ReceiverID(value model.ReceiverIdentity) text {
+    return [the exact concatenation ChannelID({value.Channel}) and literal /r0]
+}
+
+func MessageID(value model.MessageIdentity) text {
+    return [the exact concatenation ChannelID({value.Channel}), literal /m, and canonical zero-based decimal {value.CommitIndex}]
+}
+
+func SelectID(value model.SelectIdentity) text {
+    return [the exact concatenation {value.ActivationID}, literal /select, and canonical zero-based decimal {value.EncounterIndex}]
+}
+
+func SelectRecord(value model.SelectIdentity, chosenCase int, relatedIdentity text?) text {
+    return [the exact external 0.0.1 channel record: open brace, SelectID({value}), comma, canonical nonnegative decimal {chosenCase}, comma, exact {relatedIdentity} when present, then close brace]
+}
+
+func Digest(canonical text) text {
+    return [the lowercase 64-hex SHA-256 digest of the exact UTF-8 bytes in {canonical}]
+}
+
+func TypedValueValid(value execution.TypedValue) bool {
+    return [true exactly when {value.Canonical} is one complete frozen runtime/execution.md canonical Value, {value.Type} is its exact public type identity,
+        and {value.Digest} is the lowercase SHA-256 of those exact canonical UTF-8 bytes]
+}
+
+func PolicyValueValid(value execution.TypedValue) bool {
+    return [true exactly when {value.Type} is policy, {value.Canonical} is one complete frozen runtime/execution.md canonical Policy record,
+        and {value.Digest} is the lowercase SHA-256 of those exact canonical UTF-8 bytes]
+}
+
+func SameValueIdentity(left execution.ValueIdentity, right execution.ValueIdentity) bool {
+    return left.Type == right.Type && left.Digest == right.Digest
+}
+
+func MatchesValue(value execution.TypedValue, identity execution.ValueIdentity) bool {
+    return TypedValueValid(value) && value.Type == identity.Type && value.Digest == identity.Digest
+}
+
+func AuthoritiesDigest(values []text) text {
+    return [the lowercase SHA-256 digest of the frozen runtime/execution.md canonical Value bytes for ordered typed \[\]text {values}]
+}
+
+func MappingDigest(value execution.MappingIdentity) text {
+    return [the lowercase SHA-256 digest of the frozen runtime/execution.md mapping record bytes for effect {value.Effect}, signature {value.Signature}, ordered authorities {value.Authorities}, and host mapping {value.HostMapping}]
+}
+
+func CanonicalAuthorities(values []text) bool {
+    return [true exactly when {values} is duplicate-free and strictly ordered by unsigned UTF-8 bytes]
+}
+
+func OperationOrderValid(values []execution.Operation) bool {
+    return [true exactly when {values} follows frozen 0.0.2 journal order, every first stable operation identity is canonical and contiguous for its activation and kind, repeated identities are adjacent,
+        each Started is followed by exactly one Completed, Failed, or Indeterminate state of the same kind and location, and no terminal state has a later transition]
+}

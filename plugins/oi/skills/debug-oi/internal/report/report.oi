@@ -33,6 +33,8 @@ type DebugTrace struct {
     Events []Event
     Diagnostics []diagnostic.Diagnostic
     RequiredTranscriptEntries []text
+    ReceiptValid bool
+    ReceiptDiagnostics []diagnostic.Diagnostic
 }
 
 func Passed(events []Event) DebugTrace {
@@ -41,6 +43,8 @@ func Passed(events []Event) DebugTrace {
         Events: events,
         Diagnostics: []diagnostic.Diagnostic{},
         RequiredTranscriptEntries: []text{},
+        ReceiptValid: true,
+        ReceiptDiagnostics: []diagnostic.Diagnostic{},
     }
 }
 
@@ -50,6 +54,8 @@ func Failed(events []Event, diagnostics []diagnostic.Diagnostic) DebugTrace {
         Events: events,
         Diagnostics: diagnostics,
         RequiredTranscriptEntries: []text{},
+        ReceiptValid: false,
+        ReceiptDiagnostics: []diagnostic.Diagnostic{},
     }
 }
 
@@ -59,5 +65,18 @@ func Waiting(events []Event, required []text) DebugTrace {
         Events: events,
         Diagnostics: []diagnostic.Diagnostic{},
         RequiredTranscriptEntries: required,
+        ReceiptValid: false,
+        ReceiptDiagnostics: []diagnostic.Diagnostic{},
+    }
+}
+
+func InvalidReceipt(events []Event, diagnostics []diagnostic.Diagnostic) DebugTrace {
+    return DebugTrace{
+        Status: Status.Fail,
+        Events: events,
+        Diagnostics: []diagnostic.Diagnostic{},
+        RequiredTranscriptEntries: []text{},
+        ReceiptValid: false,
+        ReceiptDiagnostics: diagnostics,
     }
 }

@@ -1,0 +1,10 @@
+package main
+
+effect Record(value text) text {
+    uses fixture.record
+    contract [return the recorded value for {value}]
+}
+
+func main(value text) {
+    Record(value)
+}

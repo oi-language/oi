@@ -1,0 +1,19 @@
+package diagnostic
+
+type Diagnostic struct {
+    Category text
+    Phase text
+    Location text
+    Detail text
+    Trace []text
+}
+
+func New(category text, phase text, location text, detail text) Diagnostic {
+    return Diagnostic{
+        Category: category,
+        Phase: phase,
+        Location: location,
+        Detail: detail,
+        Trace: []text{},
+    }
+}

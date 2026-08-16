@@ -1,0 +1,439 @@
+package model
+
+import "std/diagnostic"
+import "std/execution"
+import "oi/skills/debug-oi/internal/report"
+
+type TypeIdentity struct {
+    ModuleOrdinal int
+    TypeDeclarationOrdinal int
+}
+
+type ModuleIdentity struct {
+    Ordinal int
+    PathSegments []text
+}
+
+type NamedType struct {
+    Identity TypeIdentity
+    NamedTypeID int
+    UnderlyingTypeID int
+    DeclarationLocation text
+}
+
+type LoadStatus enum {
+    Valid
+    Invalid
+}
+
+type TypeKind enum {
+    Unit
+    Text
+    Bool
+    Int
+    Named
+    Slice
+    Optional
+    Struct
+    Enum
+    Task
+    Outcome
+    Channel
+    Sender
+    Receiver
+    Failure
+}
+
+type TypeRef struct {
+    ID int
+    Kind TypeKind
+    Name text
+    UnderlyingTypeID int?
+    NamedIdentity TypeIdentity?
+    ElementTypeID int?
+    FieldNames []text
+    FieldTypeIDs []int
+    EnumLabels []text
+}
+
+type SlotKind enum {
+    Parameter
+    Local
+    Temporary
+    ReturnValue
+    OutcomeValue
+    TaskHandle
+    ChannelHandle
+    SenderEndpoint
+    ReceiverEndpoint
+}
+
+type Slot struct {
+    ID int
+    Kind SlotKind
+    TypeID int
+    FunctionID int
+    Location text
+}
+
+type LiteralKind enum {
+    Unit
+    Text
+    Bool
+    Int
+    Enum
+    None
+}
+
+type Literal struct {
+    Kind LiteralKind
+    TypeID int
+    TextValue text
+    BoolValue bool
+    IntValue int
+}
+
+type OperandKind enum {
+    Slot
+    Literal
+}
+
+type Operand struct {
+    Kind OperandKind
+    SlotID int?
+    Literal Literal?
+}
+
+type SelectorKind enum {
+    Field
+    Index
+}
+
+type Selector struct {
+    Kind SelectorKind
+    FieldName text?
+    Index Operand?
+}
+
+type SelectorPath struct {
+    Items []Selector
+}
+
+type ComputeKind enum {
+    UnaryNot
+    UnaryNegate
+    Multiply
+    Divide
+    Remainder
+    Add
+    Subtract
+    Equal
+    NotEqual
+    Less
+    LessEqual
+    Greater
+    GreaterEqual
+    SemanticMatch
+    BooleanAnd
+    BooleanOr
+    Length
+    SliceConstruct
+    StructConstruct
+    OptionalConstruct
+    Append
+    Index
+    Field
+    Convert
+    SemanticGenerate
+}
+
+type ComputeStep struct {
+    Kind ComputeKind
+    Location text
+    Inputs []Operand
+    ResultSlot int
+    ResultTypeID int
+    MemberName text?
+    CompositeFieldNames []text
+    SemanticSiteID int?
+    Continuation int
+}
+
+type JumpStep struct {
+    Target int
+}
+
+type FailureMode enum {
+    Propagate
+    Capture
+}
+
+type Completion struct {
+    Mode FailureMode
+    OutcomeSlot int?
+    Continuation int
+}
+
+type BindStep struct {
+    DestinationSlot int
+    Source Operand
+    Continuation int
+}
+
+type StoreStep struct {
+    Location text
+    BaseSlot int
+    Path SelectorPath
+    Value Operand
+    Continuation int
+}
+
+type BranchStep struct {
+    Condition Operand
+    TrueTarget int
+    FalseTarget int
+}
+
+type CallStep struct {
+    StaticCallsiteID text
+    Location text
+    CalleeFunctionID int
+    Arguments []Operand
+    ReturnSlot int?
+    Completion Completion
+}
+
+type EffectSite struct {
+    Name text
+    StaticCallsiteID text
+    Location text
+}
+
+type EffectStep struct {
+    Site EffectSite
+    Arguments []Operand
+    ResultSlot int?
+    Completion Completion
+}
+
+type LaunchStep struct {
+    StaticCallsiteID text
+    Location text
+    OwnerFunctionID int
+    CalleeFunctionID int
+    Arguments []Operand
+    HandleSlot int
+    SourceIndex int
+    Continuation int
+}
+
+type AwaitStep struct {
+    Location text
+    OwnerFunctionID int
+    HandleSlot int
+    ResultSlot int?
+    Completion Completion
+}
+
+type JoinStep struct {
+    Location text
+    OwnerFunctionID int
+    HandleSlots []int
+    Continuation int
+}
+
+type ChannelStep struct {
+    StaticSiteID text
+    Location text
+    OwnerFunctionID int
+    ChannelSlot int
+    SenderSlot int
+    ReceiverSlot int
+    Capacity Operand
+    Continuation int
+}
+
+type SendStep struct {
+    Location text
+    ChannelSlot int
+    SenderSlot int
+    Value Operand
+    Completion Completion
+}
+
+type ReceiveStep struct {
+    Location text
+    ChannelSlot int
+    ReceiverSlot int
+    DestinationSlot int
+    Completion Completion
+}
+
+type SelectCaseKind enum {
+    Send
+    Receive
+    Await
+}
+
+type SelectCase struct {
+    Kind SelectCaseKind
+    Location text
+    ChannelSlot int?
+    EndpointSlot int?
+    Value Operand?
+    HandleSlot int?
+    ResultSlot int?
+    Target int
+}
+
+type SelectStep struct {
+    StaticSelectID text
+    Location text
+    OwnerFunctionID int
+    Cases []SelectCase
+    DefaultTarget int?
+}
+
+type ReturnStep struct {
+    Location text
+    FunctionID int
+    Value Operand?
+}
+
+type StopStep struct {
+    Location text
+    Category Operand
+    Detail Operand
+}
+
+type InstructionKind enum {
+    Bind
+    Store
+    Compute
+    Branch
+    Jump
+    Call
+    Effect
+    Launch
+    Await
+    Join
+    Channel
+    Send
+    Receive
+    Select
+    Return
+    Stop
+}
+
+type Instruction struct {
+    ID int
+    Kind InstructionKind
+    Bind BindStep?
+    Store StoreStep?
+    Compute ComputeStep?
+    Branch BranchStep?
+    Jump JumpStep?
+    Call CallStep?
+    Effect EffectStep?
+    Launch LaunchStep?
+    Await AwaitStep?
+    Join JoinStep?
+    Channel ChannelStep?
+    Send SendStep?
+    Receive ReceiveStep?
+    Select SelectStep?
+    Return ReturnStep?
+    Stop StopStep?
+}
+
+type Function struct {
+    ID int
+    Name text
+    EntryLocation text
+    ParameterSlots []int
+    ReturnTypeID int
+    Instructions []Instruction
+    ClosingLocation text
+}
+
+type Program struct {
+    Modules []ModuleIdentity
+    NamedTypes []NamedType
+    Types []TypeRef
+    Slots []Slot
+    Functions []Function
+    EntryFunctionID int
+}
+
+type BindingStatus enum {
+    NotRun
+    Crossed
+    Rejected
+}
+
+type InitialSlot struct {
+    SlotID int
+    TypeID int
+    Value execution.TypedValue
+    NamedIdentity TypeIdentity?
+}
+
+type TargetIdentity struct {
+    LanguageVersion text
+    Module text
+    Entry text
+    Manifest []text
+    Artifacts []execution.ArtifactIdentity
+    Inputs []execution.ValueIdentity
+    Mappings []execution.MappingIdentity
+    Authorities []text
+    LoadedCharacters int
+    ProjectCharacters int
+}
+
+type LoadPlan struct {
+    Status LoadStatus
+    BindingStatus BindingStatus
+    Target TargetIdentity
+    Program Program
+    InitialSlots []InitialSlot
+    Diagnostics []diagnostic.Diagnostic
+    BindingDiagnostics []diagnostic.Diagnostic
+}
+
+type OperationIdentity struct {
+    TaskID text
+    ActivationID text
+    StaticCallsiteID text
+    EncounterIndex int
+}
+
+type ChannelIdentity struct {
+    ActivationID text
+    CreationIndex int
+}
+
+type SenderIdentity struct {
+    Channel ChannelIdentity
+    CopyIndex int
+}
+
+type ReceiverIdentity struct {
+    Channel ChannelIdentity
+}
+
+type MessageIdentity struct {
+    Channel ChannelIdentity
+    CommitIndex int
+}
+
+type SelectIdentity struct {
+    ActivationID text
+    EncounterIndex int
+}
+
+type Execution struct {
+    Events []report.Event
+    Diagnostics []diagnostic.Diagnostic
+    RequiredTranscriptEntries []text
+}

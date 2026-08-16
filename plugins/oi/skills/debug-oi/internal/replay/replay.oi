@@ -1,0 +1,255 @@
+package replay
+
+import "std/debug"
+import "std/diagnostic"
+import "std/execution"
+import "std/fs"
+import "oi/skills/debug-oi/internal/identity"
+import "oi/skills/debug-oi/internal/model"
+import "oi/skills/debug-oi/internal/report"
+
+effect CompileTarget(target fs.Path, bindings []debug.Binding, mappings []execution.MappingIdentity, authorities []text) model.LoadPlan {
+    uses tool.compile
+    contract [invoke the host shared exact-version compile, identity, and entry-binding oracle once for {target}, complete typed {bindings}, proposed {mappings}, and {authorities};
+        logical-read the nearest module, exact snapshot, declared sources, triggered runtime, and reachable standard packages once and return their actual TargetIdentity without source bodies;
+        validate source mapping compatibility and return actual normalized mapping fields with every digest independently recomputed; validate binding names/types/contracts before returning Crossed;
+        record every compatibility probe as a separate host mapping attempt, never as a target Operation, and never invoke target main, target effects, Reply, subagents, handoff, or user interaction;
+        for an Oi 0.0.1 target also lower the same closed typed Program and InitialSlots used by the released debugger, preserving its old replay observations;
+        for an Oi 0.0.2 target return a zero Program because receipt replay validates the protected journal and never interprets or invokes the target;
+        Invalid has BindingStatus NotRun, zero target/program/slots/binding diagnostics, and ordered load Diagnostics; Rejected has actual target/program, empty slots/load diagnostics, and exact BindingDiagnostics;
+        Crossed has actual target, one typed InitialSlot per legacy parameter when applicable, and empty Diagnostics and BindingDiagnostics; reject every inconsistent union or identity]
+}
+
+func EffectDiagnostic(cause failure) diagnostic.Diagnostic {
+    return diagnostic.Diagnostic{Category: cause.Category, Phase: cause.Phase, Location: cause.Location, Detail: cause.Detail, Trace: cause.Trace}
+}
+
+func Mismatch(field text) diagnostic.Diagnostic {
+    return diagnostic.New("REPLAY_MISMATCH", "runtime", "target:1:1", "receipt mismatch: " + field)
+}
+
+func SameText(left []text, right []text) bool {
+    if len(left) != len(right) {
+        return false
+    }
+    for index, value in left {
+        if value != right[index] {
+            return false
+        }
+    }
+    return true
+}
+
+func SameArtifacts(left []execution.ArtifactIdentity, right []execution.ArtifactIdentity) bool {
+    if len(left) != len(right) {
+        return false
+    }
+    for index, value in left {
+        var other execution.ArtifactIdentity = right[index]
+        if value.Path != other.Path || value.Bytes != other.Bytes || value.Characters != other.Characters || value.SHA256 != other.SHA256 {
+            return false
+        }
+    }
+    return true
+}
+
+func ArtifactMismatch(left []execution.ArtifactIdentity, right []execution.ArtifactIdentity) text {
+    return [the exact first differing public field path in {left} and {right}: Artifacts.length or Artifacts\[canonical index\].Path, .Bytes, .Characters, or .SHA256 in that order]
+}
+
+func SameInputs(left []execution.ValueIdentity, right []execution.ValueIdentity) bool {
+    if len(left) != len(right) {
+        return false
+    }
+    for index, value in left {
+        if !identity.SameValueIdentity(value, right[index]) {
+            return false
+        }
+    }
+    return true
+}
+
+func InputMismatch(bindings []debug.Binding, receipt []execution.ValueIdentity, target []execution.ValueIdentity) text {
+    return [the exact first differing field path among {bindings}, {receipt}, and {target}: Inputs.length, Bindings\[canonical index\].Name, or Inputs\[canonical index\].Type then .Digest]
+}
+
+func SameMappings(left []execution.MappingIdentity, right []execution.MappingIdentity) bool {
+    if len(left) != len(right) {
+        return false
+    }
+    for index, value in left {
+        var other execution.MappingIdentity = right[index]
+        if value.Effect != other.Effect || value.Signature != other.Signature || !SameText(value.Authorities, other.Authorities) ||
+            value.HostMapping != other.HostMapping || value.Digest != other.Digest || value.Digest != identity.MappingDigest(value) {
+            return false
+        }
+    }
+    return true
+}
+
+func MappingMismatch(left []execution.MappingIdentity, right []execution.MappingIdentity) text {
+    return [the exact first differing field path in {left} and {right}: Mappings.length or Mappings\[canonical index\].Effect, .Signature, .Authorities, .HostMapping, or .Digest in order]
+}
+
+func BindingsMatch(bindings []debug.Binding, inputs []execution.ValueIdentity) bool {
+    if len(bindings) != len(inputs) {
+        return false
+    }
+    for index, binding in bindings {
+        if binding.Name == "" || !identity.MatchesValue(binding.Value, inputs[index]) {
+            return false
+        }
+    }
+    return true
+}
+
+func PresentIdentity(value execution.ValueIdentity?) execution.ValueIdentity {
+    return [the exact present execution.ValueIdentity in {value}]
+}
+
+func PresentValue(value execution.TypedValue?) execution.TypedValue {
+    return [the exact present execution.TypedValue in {value}]
+}
+
+func PreAdmissionFailure(receipt execution.ExecutionReceipt) bool {
+    return [true exactly when {receipt} is a recognized terminal pre-entry failure before trusted policy/context admission: Terminal Failed, Failure present in parse, module, type,
+        effect mapping, input binding, or execution admission phase, zero Operations, and absent ReplyOperationID and Reply]
+}
+
+func PolicyValid(journal execution.ExecutionJournal, receipt execution.ExecutionReceipt) bool {
+    if receipt.Policy == none {
+        return journal.Policy == none && PreAdmissionFailure(receipt)
+    }
+    if journal.Policy == none {
+        return false
+    }
+    var public execution.ValueIdentity = PresentIdentity(receipt.Policy)
+    var protected execution.TypedValue = PresentValue(journal.Policy)
+    return identity.PolicyValueValid(protected) && protected.Type == public.Type && protected.Digest == public.Digest
+}
+
+func OperationsValid(operations []execution.Operation, entries []execution.JournalEntry) bool {
+    return [true exactly when {operations} and {entries} have equal length and matching public Operation fields in order; every protected input/output canonical value recomputes its public Type and Digest;
+        frozen 0.0.2 operation identities are contiguous, equal-ID states are adjacent and preserve kind/location/inputs, every Started has exactly one later Completed, Failed, or Indeterminate terminal;
+        Completed alone has a complete typed output when the boundary returns a value, Failed alone has its exact failure, and Indeterminate is only an external Effect with INDETERMINATE_EFFECT on the same ID;
+        no canonical value occurs in the public operations and no missing, duplicate, backward, post-terminal, fabricated completion, or receipt-terminal pseudo-operation is accepted]
+}
+
+func OperationMismatch(operations []execution.Operation, entries []execution.JournalEntry) text {
+    return [the exact first differing or invalid field path in {operations} and {entries}, using Operations.length or Operations\[canonical index\].ID, .Kind, .Location, .Status, .Inputs,
+        .Output, or .Failure in order; an allocation gap, duplicate, backward identity, or invalid transition names the first offending .ID or .Status]
+}
+
+func TranscriptValid(operations []execution.Operation, transcript []debug.EffectResult) bool {
+    return [true exactly when {transcript} has one entry for each terminal Effect operation in {operations} that has a trustworthy result and no others, in operation order;
+        Returned has one recomputable TypedValue matching the Completed public output and no Failure; Failed has the exact Failed diagnostic and no Value;
+        Started or Indeterminate has no transcript completion, duplicate, retry, synthesized result, or consumed fallback]
+}
+
+func ReplyValid(receipt execution.ExecutionReceipt, entries []execution.JournalEntry) bool {
+    return [true exactly when absent ReplyOperationID and Reply correspond to no Reply operation, or both are present and name exactly one Completed Reply operation in {entries} whose protected output
+        is the effect result and whose first protected input recomputes the Reply payload Type and Digest; no Failed, Started, Indeterminate, duplicate, non-Reply, expected-result, source-text, or hand-authored payload is accepted]
+}
+
+func ReplyMismatch(receipt execution.ExecutionReceipt, entries []execution.JournalEntry) text {
+    return [the exact first differing reply field path in {receipt} and {entries}: ReplyOperationID, Reply.Type, Reply.Digest, or the matching JournalEntry protected input]
+}
+
+func TerminalValid(receipt execution.ExecutionReceipt) bool {
+    return [true exactly when Completed has no Failure and all operations terminal; Failed or Stopped has one exact Failure and no operation after the causal terminal;
+        an Indeterminate Effect requires Terminal Failed with the same INDETERMINATE_EFFECT diagnostic and no later operation; Reply, when present, is terminally landed]
+}
+
+func ValidateReceipt(plan model.LoadPlan, bindings []debug.Binding, journal execution.ExecutionJournal, receipt execution.ExecutionReceipt,
+    transcript []debug.EffectResult) []diagnostic.Diagnostic {
+    var target model.TargetIdentity = plan.Target
+    if receipt.LanguageVersion != target.LanguageVersion {
+        return []diagnostic.Diagnostic{Mismatch("LanguageVersion")}
+    }
+    if receipt.Module != target.Module {
+        return []diagnostic.Diagnostic{Mismatch("Module")}
+    }
+    if receipt.Entry != target.Entry {
+        return []diagnostic.Diagnostic{Mismatch("Entry")}
+    }
+    if !SameText(receipt.Manifest, target.Manifest) {
+        return []diagnostic.Diagnostic{Mismatch("Manifest")}
+    }
+    if !SameArtifacts(receipt.Artifacts, target.Artifacts) {
+        return []diagnostic.Diagnostic{Mismatch(ArtifactMismatch(receipt.Artifacts, target.Artifacts))}
+    }
+    if !SameInputs(receipt.Inputs, target.Inputs) || !BindingsMatch(bindings, receipt.Inputs) {
+        return []diagnostic.Diagnostic{Mismatch(InputMismatch(bindings, receipt.Inputs, target.Inputs))}
+    }
+    if !SameMappings(receipt.Mappings, target.Mappings) {
+        return []diagnostic.Diagnostic{Mismatch(MappingMismatch(receipt.Mappings, target.Mappings))}
+    }
+    if !SameText(receipt.Authorities, target.Authorities) || !identity.CanonicalAuthorities(receipt.Authorities) ||
+        receipt.AuthoritiesIdentity.Type != "[]text" || receipt.AuthoritiesIdentity.Digest != identity.AuthoritiesDigest(receipt.Authorities) {
+        return []diagnostic.Diagnostic{Mismatch("Authorities")}
+    }
+    if !PolicyValid(journal, receipt) {
+        return []diagnostic.Diagnostic{Mismatch("Policy")}
+    }
+    if receipt.LoadedCharacters != target.LoadedCharacters || receipt.ProjectCharacters != target.ProjectCharacters {
+        return []diagnostic.Diagnostic{Mismatch("Characters")}
+    }
+    if !identity.OperationOrderValid(receipt.Operations) || !OperationsValid(receipt.Operations, journal.Entries) {
+        return []diagnostic.Diagnostic{Mismatch(OperationMismatch(receipt.Operations, journal.Entries))}
+    }
+    if !TranscriptValid(receipt.Operations, transcript) {
+        return []diagnostic.Diagnostic{Mismatch("Transcript")}
+    }
+    if !ReplyValid(receipt, journal.Entries) {
+        return []diagnostic.Diagnostic{Mismatch(ReplyMismatch(receipt, journal.Entries))}
+    }
+    if !TerminalValid(receipt) {
+        return []diagnostic.Diagnostic{Mismatch("Terminal")}
+    }
+    return []diagnostic.Diagnostic{}
+}
+
+func LegacyJournal(journal execution.ExecutionJournal) []text {
+    var result []text = derive [the ordered decoded text payloads of completed legacy records in {journal.Entries}, after every TypedValue digest is recomputed; no other entry contributes text]
+    return result
+}
+
+func Execute(program model.Program, initialSlots []model.InitialSlot, journal []text, transcript []debug.EffectResult) model.Execution {
+    var result model.Execution = derive [produce the unique released Oi 0.0.1 debugger replay projection of typed {program}, crossed {initialSlots}, protected {journal}, and typed {transcript};
+        preserve every published validation, copied-value, identity, journal, diagnostic, event, missing-transcript, and terminal observation exactly]
+    return result
+}
+
+func Result(value model.Execution) report.DebugTrace {
+    if len(value.RequiredTranscriptEntries) != 0 {
+        return report.Waiting(value.Events, value.RequiredTranscriptEntries)
+    }
+    if len(value.Diagnostics) != 0 {
+        return report.Failed(value.Events, value.Diagnostics)
+    }
+    return report.Passed(value.Events)
+}
+
+func Trace(target fs.Path, bindings []debug.Binding, journal execution.ExecutionJournal, receipt execution.ExecutionReceipt,
+    transcript []debug.EffectResult) report.DebugTrace {
+    var compiled outcome[model.LoadPlan] = capture(CompileTarget(target, bindings, receipt.Mappings, receipt.Authorities))
+    if compiled.Ok {
+        var plan model.LoadPlan = compiled.Value
+        if plan.Status == model.LoadStatus.Invalid || len(plan.Diagnostics) != 0 {
+            return report.Failed([]report.Event{}, plan.Diagnostics)
+        }
+        if plan.BindingStatus == model.BindingStatus.Rejected || len(plan.BindingDiagnostics) != 0 {
+            return report.Failed([]report.Event{}, plan.BindingDiagnostics)
+        }
+        var receiptDiagnostics []diagnostic.Diagnostic = ValidateReceipt(plan, bindings, journal, receipt, transcript)
+        if len(receiptDiagnostics) != 0 {
+            return report.InvalidReceipt([]report.Event{}, receiptDiagnostics)
+        }
+        if plan.Target.LanguageVersion == "Oi 0.0.1" {
+            return Result(Execute(plan.Program, plan.InitialSlots, LegacyJournal(journal), transcript))
+        }
+        return report.Passed([]report.Event{})
+    } else {
+        return report.Failed([]report.Event{}, []diagnostic.Diagnostic{EffectDiagnostic(compiled.Failure)})
+    }
+}

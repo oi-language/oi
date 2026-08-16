@@ -1,0 +1,95 @@
+package execution
+
+import "std/diagnostic"
+
+type ArtifactIdentity struct {
+    Path text
+    Bytes int
+    Characters int
+    SHA256 text
+}
+
+type ValueIdentity struct {
+    Type text
+    Digest text
+}
+
+type TypedValue struct {
+    Type text
+    Canonical text
+    Digest text
+}
+
+type MappingIdentity struct {
+    Effect text
+    Signature text
+    Authorities []text
+    HostMapping text
+    Digest text
+}
+
+type OperationKind enum {
+    Judgment
+    Derivation
+    Effect
+    TaskLaunch
+    Await
+    ChannelCommit
+    Detach
+    Handoff
+    Reply
+}
+
+type OperationStatus enum {
+    Started
+    Completed
+    Failed
+    Indeterminate
+}
+
+type TerminalStatus enum {
+    Completed
+    Failed
+    Stopped
+}
+
+type Operation struct {
+    ID text
+    Kind OperationKind
+    Location text
+    Status OperationStatus
+    Inputs []ValueIdentity
+    Output ValueIdentity?
+    Failure diagnostic.Diagnostic?
+}
+
+type ExecutionReceipt struct {
+    LanguageVersion text
+    Module text
+    Entry text
+    Manifest []text
+    Artifacts []ArtifactIdentity
+    Inputs []ValueIdentity
+    Mappings []MappingIdentity
+    Authorities []text
+    AuthoritiesIdentity ValueIdentity
+    Policy ValueIdentity?
+    Operations []Operation
+    ReplyOperationID text?
+    Reply ValueIdentity?
+    Terminal TerminalStatus
+    Failure diagnostic.Diagnostic?
+    LoadedCharacters int
+    ProjectCharacters int
+}
+
+type JournalEntry struct {
+    Operation Operation
+    Inputs []TypedValue
+    Output TypedValue?
+}
+
+type ExecutionJournal struct {
+    Policy TypedValue?
+    Entries []JournalEntry
+}

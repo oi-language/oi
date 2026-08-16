@@ -1,12 +1,12 @@
 ---
 name: debug-oi
-description: Use when an Agent needs a deterministic read-only structured trace of an Oi 0.0.1 module without executing its entry or effects.
+description: Use when an Agent needs deterministic typed receipt replay without invoking the target entry or effects.
 ---
 
 # Debug Oi
 
-Use the colocated `oi.mod` and `main.oi` through the local `using-oi` bootstrap. For each request, load the resolved exact Oi 0.0.1 `execution.md` exactly once, close its prefix manifest from the parsed reachable graph and debug mode, and never read the base specification again.
+Use the colocated manifest and entry through local `using-oi`. Load exact Oi 0.0.2 once and close debug/replay triggers without rereading it.
 
-Bind typed caller inputs to the host-only lowercase resultless entry exactly as `func main(target fs.Path, bindings []debug.Binding, journal []text, transcript []debug.EffectResult)`. Map `debug.CompileTarget(target fs.Path, bindings []debug.Binding) debug.LoadPlan` to `tool.compile`, and map `effect Reply(value report.DebugTrace) unit` to `caller.reply`. Map no target effect or workspace effect.
+Bind the exact entry `main(target fs.Path, bindings []debug.Binding, journal execution.ExecutionJournal, receipt execution.ExecutionReceipt, transcript []debug.EffectResult)`. Map `replay.CompileTarget(target, bindings, receipt.Mappings, receipt.Authorities)` to `tool.compile` and `Reply(report.DebugTrace)` to `caller.reply`. Each compatibility probe is a separate mapping attempt. Map no target or workspace effect.
 
-Host-invoke `main` exactly once. Capture exactly one typed `report.DebugTrace` payload from `Reply` and expose it unchanged. Do not Oi-call `main`, infer an entry return, execute the target, or copy debugger algorithms into this adapter.
+Host-invoke once and expose the one typed `DebugTrace` unchanged. Replay is read-only: never call target main/effects, complete or retry an operation, infer source/expected payloads, or let the target read its current receipt.

@@ -1,7 +1,9 @@
 package main
 
+import "std/debug"
+import "std/execution"
 import "std/fs"
-import "oi/skills/debug-oi/internal/debug"
+import "oi/skills/debug-oi/internal/replay"
 import "oi/skills/debug-oi/internal/report"
 
 effect Reply(value report.DebugTrace) unit {
@@ -9,6 +11,7 @@ effect Reply(value report.DebugTrace) unit {
     contract [deliver {value} exactly once to the caller]
 }
 
-func main(target fs.Path, bindings []debug.Binding, journal []text, transcript []debug.EffectResult) {
-    Reply(debug.Trace(target, bindings, journal, transcript))
+func main(target fs.Path, bindings []debug.Binding, journal execution.ExecutionJournal, receipt execution.ExecutionReceipt,
+    transcript []debug.EffectResult) {
+    Reply(replay.Trace(target, bindings, journal, receipt, transcript))
 }

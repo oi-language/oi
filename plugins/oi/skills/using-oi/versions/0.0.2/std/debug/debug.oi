@@ -1,0 +1,21 @@
+package debug
+
+import "std/diagnostic"
+import "std/execution"
+
+type Binding struct {
+    Name text
+    Value execution.TypedValue
+}
+
+type EffectResultKind enum {
+    Returned
+    Failed
+}
+
+type EffectResult struct {
+    Kind EffectResultKind
+    OperationID text
+    Value execution.TypedValue?
+    Failure diagnostic.Diagnostic?
+}
