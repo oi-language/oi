@@ -29,13 +29,15 @@ func PushCall(program model.Program, machine legacy_model.Machine, taskIndex int
     var activationID text = activation.TaskID + "/a" + [canonical nonnegative decimal text for {counter.Next}]
     machine = legacy_step.AdvanceActivation(machine, activation.TaskID)
     activation.PC = step.Completion.Continuation
-    machine = legacy_scheduler.PutCurrent(machine, taskIndex, activation)
-    var crossed legacy_model.ArgumentCrossing = legacy_action.Cross(program, machine, activation.Slots, step.Arguments)
+    var function model.Function = legacy_step.Function(program, step.CalleeFunctionID)
+    var crossed legacy_model.ArgumentCrossing = legacy_action.Cross(program, machine, activation.Slots, step.Arguments,
+        activationID, function.ParameterSlots)
     machine = crossed.Machine
+    activation.Slots = crossed.SourceSlots
+    machine = legacy_scheduler.PutCurrent(machine, taskIndex, activation)
     var child legacy_model.Activation = legacy_scheduler.NewActivation(program, step.CalleeFunctionID, activation.TaskID, activationID)
     machine.Tasks[taskIndex].Frames = append(machine.Tasks[taskIndex].Frames, legacy_model.Frame{Activation: child,
         ReturnSlot: step.ReturnSlot, Completion: step.Completion, CallLocation: step.Location})
-    var function model.Function = legacy_step.Function(program, step.CalleeFunctionID)
     machine = legacy_step.AddEvent(machine, report.EventKind.Enter, function.EntryLocation, activationID)
     var arguments []legacy_model.Value = crossed.Values
     for index, slotID in function.ParameterSlots {
@@ -65,6 +67,7 @@ func Fail(program model.Program, machine legacy_model.Machine, taskIndex int,
         machine.Tasks[taskIndex].Frames = FramesWithoutLast(machine.Tasks[taskIndex].Frames)
         var parent legacy_model.Activation = legacy_scheduler.Current(machine, taskIndex)
         var completion model.Completion = PresentCompletion(frame.Completion)
+        failure = legacy_step.Frame(failure, "call", legacy_step.PresentText(frame.CallLocation))
         if completion.Mode == model.FailureMode.Capture {
             var slotID int = legacy_step.PresentInt(completion.OutcomeSlot)
             parent.Slots = legacy_value.Put(parent.Slots, slotID,
@@ -72,7 +75,6 @@ func Fail(program model.Program, machine legacy_model.Machine, taskIndex int,
             parent.PC = completion.Continuation
             return legacy_scheduler.PutCurrent(machine, taskIndex, parent)
         }
-        failure = legacy_step.Frame(failure, "call", legacy_step.PresentText(frame.CallLocation))
     }
 }
 

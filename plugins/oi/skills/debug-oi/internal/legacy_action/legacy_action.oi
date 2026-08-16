@@ -25,18 +25,23 @@ func Type(program model.Program, typeID int) model.TypeRef {
 }
 
 func Cross(program model.Program, machine legacy_model.Machine, slots []legacy_model.SlotValue,
-    operands []model.Operand) legacy_model.ArgumentCrossing {
+    operands []model.Operand, destinationOwner text, destinationSlots []int) legacy_model.ArgumentCrossing {
     var values []legacy_model.Value = []legacy_model.Value{}
-    for operand in operands {
+    var sourceSlots []legacy_model.SlotValue = slots
+    for index, operand in operands {
         var value legacy_model.Value = legacy_value.Operand(slots, operand)
         if Type(program, value.TypeID).Kind == model.TypeKind.Sender {
             var copied legacy_model.ArgumentCrossing = legacy_channel.CopySender(machine, value)
             machine = copied.Machine
             value = copied.Values[0]
+        } else if Type(program, value.TypeID).Kind == model.TypeKind.Receiver {
+            sourceSlots = legacy_value.Clear(sourceSlots, legacy_step.PresentInt(operand.SlotID))
+            machine = legacy_channel.MoveReceiver(machine, value,
+                legacy_channel.ReceiverHolder(destinationOwner, destinationSlots[index]))
         }
         values = append(values, value)
     }
-    return legacy_model.ArgumentCrossing{Machine: machine, Values: values}
+    return legacy_model.ArgumentCrossing{Machine: machine, Values: values, SourceSlots: sourceSlots}
 }
 
 func BranchLocation(program model.Program, condition model.Operand, function model.Function) text {
@@ -55,6 +60,10 @@ func Advance(program model.Program, function model.Function, machine legacy_mode
             var copied legacy_model.ArgumentCrossing = legacy_channel.CopySender(machine, value)
             machine = copied.Machine
             value = copied.Values[0]
+        } else if Type(program, value.TypeID).Kind == model.TypeKind.Receiver {
+            activation.Slots = legacy_value.Clear(activation.Slots, legacy_step.PresentInt(step.Source.SlotID))
+            machine = legacy_channel.MoveReceiver(machine, value,
+                legacy_channel.ReceiverHolder(activation.ID, step.DestinationSlot))
         }
         activation.Slots = legacy_value.Put(activation.Slots, step.DestinationSlot, value)
         machine = legacy_step.AddEvent(machine, report.EventKind.Bind, legacy_step.SlotLocation(program, step.DestinationSlot), value.Canonical)
@@ -68,14 +77,24 @@ func Advance(program model.Program, function model.Function, machine legacy_mode
             }
         }
         var base legacy_model.Value = legacy_value.Slot(activation.Slots, step.BaseSlot)
-        var stored legacy_model.Value = legacy_value.Store(program, base, step.Path, indexes,
+        var stored legacy_model.ValueResult = legacy_value.Store(program, base, step.Path, indexes,
             legacy_value.Operand(activation.Slots, step.Value), step.Location)
-        activation.Slots = legacy_value.Put(activation.Slots, step.BaseSlot, stored)
+        if stored.Failure != none {
+            return legacy_model.Transition{Machine: machine, Activation: activation,
+                Failure: stored.Failure, Blocked: false, BlockKind: legacy_model.BlockKind.None,
+                BlockLocation: "", BlockChannelID: none, BlockTaskID: none}
+        }
+        activation.Slots = legacy_value.Put(activation.Slots, step.BaseSlot, legacy_value.PresentValue(stored.Value))
         activation.PC = step.Continuation
     } else if instruction.Kind == model.InstructionKind.Compute {
         var step model.ComputeStep = legacy_step.PresentCompute(instruction.Compute)
-        var value legacy_model.Value = legacy_value.Compute(program, step, Values(activation.Slots, step.Inputs))
-        activation.Slots = legacy_value.Put(activation.Slots, step.ResultSlot, value)
+        var value legacy_model.ValueResult = legacy_value.Compute(program, step, Values(activation.Slots, step.Inputs))
+        if value.Failure != none {
+            return legacy_model.Transition{Machine: machine, Activation: activation,
+                Failure: value.Failure, Blocked: false, BlockKind: legacy_model.BlockKind.None,
+                BlockLocation: "", BlockChannelID: none, BlockTaskID: none}
+        }
+        activation.Slots = legacy_value.Put(activation.Slots, step.ResultSlot, legacy_value.PresentValue(value.Value))
         activation.PC = step.Continuation
     } else if instruction.Kind == model.InstructionKind.Branch {
         var step model.BranchStep = legacy_step.PresentBranch(instruction.Branch)

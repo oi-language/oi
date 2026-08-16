@@ -20,6 +20,11 @@ effect CompileTarget(target fs.Path, bindings []debug.Binding, mappings []execut
         Target.EntryLocation is always the entry function name token used by current receipt admission, while every legacy Program.Function.EntryLocation is its declaration first token;
         a legacy entry named-contract rejection is TYPE_CONTRACT_MISMATCH, input binding, entry parameter identifier Location, declared named type exact source spelling Detail, and empty Trace;
         every legacy EffectSite StaticCallsiteID equals its effect call SourcePosition.Location; existing fixtures retain exact testdata/<fixture>/main.oi path labels despite local version manifests;
+        lower every receiver assignment or argument crossing as one affine move that invalidates its source slot and records the destination holder; sender crossings remain committed copies;
+        lower legacy Divide/Remainder zero to DIVISION_BY_ZERO runtime at ComputeStep Location with Detail / or %; lower Compute Index and Store selector bounds failure to
+            INDEX_OUT_OF_RANGE runtime at the matching step Location with Detail index I out of range for length N using canonical decimal I/N;
+        lower non-unique SemanticGenerate to AMBIGUOUS_SEMANTIC_VALUE at its semantic open bracket with target type source spelling Detail, uncertain SemanticMatch to
+            AMBIGUOUS_SEMANTIC_MATCH at its ~= token with Detail ~=, and non-input named contract failure to TYPE_CONTRACT_MISMATCH at the exact boundary with declared type spelling Detail;
         record every compatibility probe as a separate host mapping attempt, never as a target Operation, and never invoke target main, target effects, Reply, subagents, handoff, or user interaction;
         for an Oi 0.0.1 target lower the same closed typed Program and legacy canonical InitialSlots used by the released debugger;
         decode typed transcript results into LegacyTranscript under the compiled effect result types;

@@ -68,10 +68,25 @@ func CopySender(machine legacy_model.Machine, value legacy_model.Value) legacy_m
             machine.Channels[index].SenderCopy = channel.SenderCopy + 1
             machine.Channels[index].SenderIDs = append(channel.SenderIDs, copied)
             value.Canonical = copied
-            return legacy_model.ArgumentCrossing{Machine: machine, Values: []legacy_model.Value{value}}
+            return legacy_model.ArgumentCrossing{Machine: machine, Values: []legacy_model.Value{value},
+                SourceSlots: []legacy_model.SlotValue{}}
         }
     }
     return [the unique committed sender copy crossing for validated sender value {value}]
+}
+
+func ReceiverHolder(owner text, slotID int) text {
+    return owner + "/slot" + [canonical nonnegative decimal text for {slotID}]
+}
+
+func MoveReceiver(machine legacy_model.Machine, value legacy_model.Value, holder text) legacy_model.Machine {
+    for index, channel in machine.Channels {
+        if value.Canonical == channel.ID + "/r0" {
+            machine.Channels[index].ReceiverHolder = holder
+            return machine
+        }
+    }
+    return [the unique receiver holder move for validated receiver value {value}]
 }
 
 func NextMessageID(machine legacy_model.Machine, channelID text) text {
@@ -104,8 +119,11 @@ func CommitSend(machine legacy_model.Machine, channelID text, value legacy_model
 func CommitReceive(machine legacy_model.Machine, channelID text, location text) legacy_model.Machine {
     var channelIndex int = ChannelIndex(machine, channelID)
     var message legacy_model.Message = machine.Channels[channelIndex].Messages[0]
+    var wasFull bool = len(machine.Channels[channelIndex].Messages) == machine.Channels[channelIndex].Capacity
     machine.Channels[channelIndex].Messages = Remaining(machine.Channels[channelIndex].Messages)
-    machine.Channels[channelIndex].FreeSequence = machine.NextStateSequence
+    if wasFull {
+        machine.Channels[channelIndex].FreeSequence = machine.NextStateSequence
+    }
     machine.NextStateSequence = machine.NextStateSequence + 1
     return legacy_step.AddEvent(machine, report.EventKind.Receive, location, message.Value.Canonical)
 }
@@ -114,90 +132,8 @@ func Received(machine legacy_model.Machine, channelID text) legacy_model.Message
     return machine.Channels[ChannelIndex(machine, channelID)].Messages[0]
 }
 
-func ReadySequence(machine legacy_model.Machine, activation legacy_model.Activation, selected model.SelectCase) int {
-    if selected.Kind == model.SelectCaseKind.Await {
-        var taskID text = legacy_value.Slot(activation.Slots, legacy_step.PresentInt(selected.HandleSlot)).Canonical
-        var task legacy_model.TaskState = machine.Tasks[TaskIndex(machine, taskID)]
-        if Terminal(task.Status) {
-            return task.TerminalSequence
-        }
-        return 0
-    }
-    var channelID text = legacy_value.Slot(activation.Slots, legacy_step.PresentInt(selected.ChannelSlot)).Canonical
-    if selected.Kind == model.SelectCaseKind.Send {
-        if CanSend(machine, channelID) {
-            return machine.Channels[ChannelIndex(machine, channelID)].FreeSequence
-        }
-        return 0
-    }
-    if CanReceive(machine, channelID) {
-        return Received(machine, channelID).ReadySequence
-    }
-    return 0
-}
-
-func ReadyCase(machine legacy_model.Machine, activation legacy_model.Activation, step model.SelectStep) int {
-    var chosen int = -1
-    var chosenSequence int = 0
-    for index, item in step.Cases {
-        var sequence int = ReadySequence(machine, activation, item)
-        if sequence != 0 && (chosen == -1 || sequence < chosenSequence) {
-            chosen = index
-            chosenSequence = sequence
-        }
-    }
-    if chosen == -1 && step.DefaultTarget != none {
-        return len(step.Cases)
-    }
-    return chosen
-}
-
-func SelectReady(machine legacy_model.Machine, activation legacy_model.Activation, step model.SelectStep) bool {
-    return ReadyCase(machine, activation, step) != -1
-}
-
 func Mismatch(location text, field text) diagnostic.Diagnostic {
     return diagnostic.New("REPLAY_MISMATCH", "runtime", location, "select journal mismatch: " + field)
-}
-
-func SameOptional(left text?, right text?) bool {
-    if left == none || right == none {
-        return left == none && right == none
-    }
-    return legacy_step.PresentText(left) == legacy_step.PresentText(right)
-}
-
-func ExpectedRelated(machine legacy_model.Machine, activation legacy_model.Activation, step model.SelectStep, chosen int) text? {
-    if chosen == len(step.Cases) {
-        return none
-    }
-    var selected model.SelectCase = step.Cases[chosen]
-    if selected.Kind == model.SelectCaseKind.Await {
-        return legacy_value.Slot(activation.Slots, legacy_step.PresentInt(selected.HandleSlot)).Canonical
-    }
-    var channelID text = legacy_value.Slot(activation.Slots, legacy_step.PresentInt(selected.ChannelSlot)).Canonical
-    if selected.Kind == model.SelectCaseKind.Send {
-        return NextMessageID(machine, channelID)
-    }
-    if !CanReceive(machine, channelID) {
-        return none
-    }
-    return Received(machine, channelID).ID
-}
-
-func RelatedValid(machine legacy_model.Machine, activation legacy_model.Activation, step model.SelectStep,
-    chosen int, actual text?) bool {
-    if chosen != len(step.Cases) && step.Cases[chosen].Kind == model.SelectCaseKind.Receive && actual == none {
-        return false
-    }
-    return SameOptional(actual, ExpectedRelated(machine, activation, step, chosen))
-}
-
-func CaseReady(machine legacy_model.Machine, activation legacy_model.Activation, step model.SelectStep, chosen int) bool {
-    if chosen == len(step.Cases) {
-        return ReadyCase(machine, activation, step) == len(step.Cases)
-    }
-    return ReadySequence(machine, activation, step.Cases[chosen]) != 0
 }
 
 func Block(machine legacy_model.Machine, activation legacy_model.Activation, kind legacy_model.BlockKind,
@@ -217,7 +153,7 @@ func Failed(machine legacy_model.Machine, activation legacy_model.Activation, fa
 }
 
 func Advance(program model.Program, machine legacy_model.Machine, activation legacy_model.Activation,
-    instruction model.Instruction, journal []text) legacy_model.Transition {
+    instruction model.Instruction) legacy_model.Transition {
     if instruction.Kind == model.InstructionKind.Channel {
         var step model.ChannelStep = legacy_step.PresentChannel(instruction.Channel)
         var channelIdentity model.ChannelIdentity = model.ChannelIdentity{ActivationID: activation.ID, CreationIndex: activation.ChannelCreation}
@@ -226,7 +162,8 @@ func Advance(program model.Program, machine legacy_model.Machine, activation leg
         var capacity int = legacy_value.Int(legacy_value.Operand(activation.Slots, step.Capacity))
         machine.Channels = append(machine.Channels, legacy_model.ChannelState{ID: channelID, Capacity: capacity,
             Messages: []legacy_model.Message{}, SenderCopy: 1, SenderIDs: []text{channelID + "/s0"},
-            MessageCommit: 0, FreeSequence: machine.NextStateSequence})
+            MessageCommit: 0, FreeSequence: machine.NextStateSequence,
+            ReceiverHolder: ReceiverHolder(activation.ID, step.ReceiverSlot)})
         machine.NextStateSequence = machine.NextStateSequence + 1
         activation.Slots = legacy_value.Put(activation.Slots, step.ChannelSlot, legacy_value.Handle(legacy_step.SlotType(program, step.ChannelSlot), channelID))
         activation.Slots = legacy_value.Put(activation.Slots, step.SenderSlot, legacy_value.Handle(legacy_step.SlotType(program, step.SenderSlot), channelID + "/s0"))
@@ -244,80 +181,14 @@ func Advance(program model.Program, machine legacy_model.Machine, activation leg
         activation.PC = step.Completion.Continuation
         return Done(machine, activation)
     }
-    if instruction.Kind == model.InstructionKind.Receive {
-        var step model.ReceiveStep = legacy_step.PresentReceive(instruction.Receive)
-        var channelID text = legacy_value.Slot(activation.Slots, step.ChannelSlot).Canonical
-        if !CanReceive(machine, channelID) {
-            return Block(machine, activation, legacy_model.BlockKind.Receive, step.Location, channelID, none)
-        }
-        var message legacy_model.Message = Received(machine, channelID)
-        machine = CommitReceive(machine, channelID, step.Location)
-        activation.Slots = legacy_value.Put(activation.Slots, step.DestinationSlot, message.Value)
-        activation.PC = step.Completion.Continuation
-        return Done(machine, activation)
+    var step model.ReceiveStep = legacy_step.PresentReceive(instruction.Receive)
+    var channelID text = legacy_value.Slot(activation.Slots, step.ChannelSlot).Canonical
+    if !CanReceive(machine, channelID) {
+        return Block(machine, activation, legacy_model.BlockKind.Receive, step.Location, channelID, none)
     }
-    var step model.SelectStep = legacy_step.PresentSelect(instruction.Select)
-    var ready int = ReadyCase(machine, activation, step)
-    if machine.JournalIndex >= len(journal) {
-        if ready == -1 {
-            return Block(machine, activation, legacy_model.BlockKind.Select, step.Location, none, none)
-        }
-        return Failed(machine, activation, Mismatch(step.Location, "Record"))
-    }
-    var decoded legacy_model.SelectionDecode = legacy_value.DecodeSelection(journal[machine.JournalIndex])
-    if !decoded.Valid {
-        return Failed(machine, activation, Mismatch(step.Location, "Record"))
-    }
-    var selectID text = identity.SelectID(model.SelectIdentity{ActivationID: activation.ID, EncounterIndex: activation.SelectEncounter})
-    if decoded.SelectID != selectID {
-        return Failed(machine, activation, Mismatch(step.Location, "SelectID"))
-    }
-    var chosen int = decoded.CaseIndex
-    if chosen < 0 || chosen > len(step.Cases) ||
-        (decoded.CaseIndex == len(step.Cases) && step.DefaultTarget == none) {
-        return Failed(machine, activation, Mismatch(step.Location, "ChosenCase"))
-    }
-    var chosenReady bool = CaseReady(machine, activation, step, chosen)
-    if chosenReady && chosen != len(step.Cases) && ready != chosen {
-        return Failed(machine, activation, Mismatch(step.Location, "ChosenCase"))
-    }
-    if !RelatedValid(machine, activation, step, chosen, decoded.RelatedIdentity) {
-        return Failed(machine, activation, Mismatch(step.Location, "RelatedIdentity"))
-    }
-    if !chosenReady {
-        return Failed(machine, activation, Mismatch(step.Location, "Readiness"))
-    }
-    machine.JournalIndex = machine.JournalIndex + 1
-    machine.LastSelectLocation = step.Location
-    activation.SelectEncounter = activation.SelectEncounter + 1
-    if chosen == len(step.Cases) {
-        activation.PC = legacy_step.PresentInt(step.DefaultTarget)
-        return Done(machine, activation)
-    }
-    var selected model.SelectCase = step.Cases[chosen]
-    if selected.Kind == model.SelectCaseKind.Send {
-        var channelID text = legacy_value.Slot(activation.Slots, legacy_step.PresentInt(selected.ChannelSlot)).Canonical
-        machine = CommitSend(machine, channelID, legacy_value.Operand(activation.Slots, legacy_step.PresentOperand(selected.Value)), selected.Location)
-    } else if selected.Kind == model.SelectCaseKind.Receive {
-        var channelID text = legacy_value.Slot(activation.Slots, legacy_step.PresentInt(selected.ChannelSlot)).Canonical
-        var message legacy_model.Message = Received(machine, channelID)
-        machine = CommitReceive(machine, channelID, selected.Location)
-        if selected.ResultSlot != none {
-            activation.Slots = legacy_value.Put(activation.Slots, legacy_step.PresentInt(selected.ResultSlot), message.Value)
-        }
-    } else {
-        var taskID text = legacy_value.Slot(activation.Slots, legacy_step.PresentInt(selected.HandleSlot)).Canonical
-        var taskIndex int = TaskIndex(machine, taskID)
-        machine.Tasks[taskIndex].Observed = true
-        machine = legacy_step.AddEvent(machine, report.EventKind.Await, selected.Location, taskID)
-        if machine.Tasks[taskIndex].Failure != none {
-            return Failed(machine, activation, legacy_step.Frame(legacy_step.PresentDiagnostic(machine.Tasks[taskIndex].Failure), "await", selected.Location))
-        }
-        if selected.ResultSlot != none {
-            activation.Slots = legacy_value.Put(activation.Slots, legacy_step.PresentInt(selected.ResultSlot),
-                legacy_value.PresentValue(machine.Tasks[taskIndex].Value))
-        }
-    }
-    activation.PC = selected.Target
+    var message legacy_model.Message = Received(machine, channelID)
+    machine = CommitReceive(machine, channelID, step.Location)
+    activation.Slots = legacy_value.Put(activation.Slots, step.DestinationSlot, message.Value)
+    activation.PC = step.Completion.Continuation
     return Done(machine, activation)
 }

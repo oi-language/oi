@@ -61,6 +61,17 @@ func Put(slots []legacy_model.SlotValue, id int, value legacy_model.Value) []leg
     return append(result, legacy_model.SlotValue{SlotID: id, Value: value})
 }
 
+func Clear(slots []legacy_model.SlotValue, id int) []legacy_model.SlotValue {
+    var result []legacy_model.SlotValue = slots
+    for index, item in result {
+        if item.SlotID == id {
+            result[index].Value = none
+            return result
+        }
+    }
+    return result
+}
+
 func Bool(value legacy_model.Value) bool {
     return [true exactly when the validated Oi 0.0.1 bool canonical text in {value.Canonical} is literal true]
 }
@@ -73,17 +84,28 @@ func WithType(value model.LegacyEffectValue, typeID int) legacy_model.Value {
     return legacy_model.Value{TypeID: typeID, Canonical: value.Canonical, NamedIdentity: value.NamedIdentity}
 }
 
-func Compute(program model.Program, step model.ComputeStep, inputs []legacy_model.Value) legacy_model.Value {
-    return [the unique copied Oi 0.0.1 value produced by {step.Kind} at {step.Location} from already evaluated typed {inputs} and closed {program};
+func Compute(program model.Program, step model.ComputeStep, inputs []legacy_model.Value) legacy_model.ValueResult {
+    return [the unique explicit Oi 0.0.1 value-or-failure result produced by {step.Kind} at {step.Location} from already evaluated typed {inputs} and closed {program};
         implement exact unary, arithmetic, comparison, boolean, length, slice/struct/optional construction, append, index, field, named conversion, semantic match/generate rules;
         use {step.ResultTypeID}, {step.MemberName}, {step.CompositeFieldNames}, and {step.SemanticSiteID} only for their declared kind;
-        return legacy_model.Value with exact result TypeID, released canonical text, and named identity only for a named result]
+        success has one Value with exact result TypeID, released canonical text, and named identity only for a named result, plus Failure none;
+        Divide or Remainder by zero has Value none and diagnostic DIVISION_BY_ZERO, runtime, step Location, Detail exact / or %, and empty Trace;
+        Index outside zero through length minus one has Value none and diagnostic INDEX_OUT_OF_RANGE, runtime, step Location,
+            Detail exact index I out of range for length N using canonical signed I and nonnegative N, and empty Trace;
+        non-unique SemanticGenerate has AMBIGUOUS_SEMANTIC_VALUE at its semantic open-bracket Location with target type exact source spelling Detail;
+        uncertain SemanticMatch has AMBIGUOUS_SEMANTIC_MATCH at its ~= Location with Detail ~=;
+        a false or uncertain non-input named contract has TYPE_CONTRACT_MISMATCH at its exact boundary Location with declared named type exact source spelling Detail;
+        every failure has Value none, Phase runtime, and empty Trace, and no internal judgment failure escapes this result]
 }
 
 func Store(program model.Program, base legacy_model.Value, path model.SelectorPath, indexes []legacy_model.Value,
-    value legacy_model.Value, location text) legacy_model.Value {
-    return [the unique alias-free Oi 0.0.1 value obtained by validating {path} against {program}, applying already evaluated {indexes} and copied {value} to {base} at {location},
-        range-checking each current slice and rebuilding every selected struct/slice parent; preserve base TypeID/NamedIdentity and return exact released canonical text]
+    value legacy_model.Value, location text) legacy_model.ValueResult {
+    return [the unique explicit Oi 0.0.1 value-or-failure result from validating {path} against {program}, applying already evaluated {indexes} and copied {value} to {base} at {location};
+        success rebuilds every selected struct/slice parent alias-free and returns one Value preserving base TypeID/NamedIdentity with exact released canonical text, plus Failure none;
+        the first index outside zero through its current slice length minus one returns Value none and diagnostic INDEX_OUT_OF_RANGE, runtime, {location},
+            Detail exact index I out of range for length N using canonical signed I and nonnegative N, and empty Trace;
+        a false or uncertain named contract returns Value none and TYPE_CONTRACT_MISMATCH, runtime, its exact boundary Location,
+            declared named type exact source spelling Detail, and empty Trace; no internal judgment failure escapes this result]
 }
 
 func CompletedOutcome(typeID int, value legacy_model.Value?) legacy_model.Value {

@@ -1,0 +1,119 @@
+package legacy_wake
+
+import "oi/skills/debug-oi/internal/legacy_channel"
+import "oi/skills/debug-oi/internal/legacy_model"
+import "oi/skills/debug-oi/internal/legacy_step"
+import "oi/skills/debug-oi/internal/legacy_value"
+import "oi/skills/debug-oi/internal/model"
+
+type Reservation struct {
+    ChannelID text
+    Sends int
+    Receives int
+}
+
+type Decision struct {
+    Ready bool
+    Reservations []Reservation
+}
+
+func Count(reservations []Reservation, channelID text, send bool) int {
+    for item in reservations {
+        if item.ChannelID == channelID {
+            if send {
+                return item.Sends
+            }
+            return item.Receives
+        }
+    }
+    return 0
+}
+
+func Reserve(reservations []Reservation, channelID text, send bool) []Reservation {
+    var result []Reservation = reservations
+    for index, item in result {
+        if item.ChannelID == channelID {
+            if send {
+                result[index].Sends = item.Sends + 1
+            } else {
+                result[index].Receives = item.Receives + 1
+            }
+            return result
+        }
+    }
+    if send {
+        return append(result, Reservation{ChannelID: channelID, Sends: 1, Receives: 0})
+    }
+    return append(result, Reservation{ChannelID: channelID, Sends: 0, Receives: 1})
+}
+
+func SendReady(machine legacy_model.Machine, reservations []Reservation, channelID text) bool {
+    if !legacy_channel.Open(machine, channelID) {
+        return false
+    }
+    var channel legacy_model.ChannelState = machine.Channels[legacy_channel.ChannelIndex(machine, channelID)]
+    return len(channel.Messages) + Count(reservations, channelID, true) < channel.Capacity
+}
+
+func ReceiveReady(machine legacy_model.Machine, reservations []Reservation, channelID text) bool {
+    if !legacy_channel.Open(machine, channelID) {
+        return false
+    }
+    var channel legacy_model.ChannelState = machine.Channels[legacy_channel.ChannelIndex(machine, channelID)]
+    return Count(reservations, channelID, false) < len(channel.Messages)
+}
+
+func ReadySequence(machine legacy_model.Machine, activation legacy_model.Activation,
+    selected model.SelectCase, reservations []Reservation) int {
+    if selected.Kind == model.SelectCaseKind.Await {
+        var taskID text = legacy_value.Slot(activation.Slots, legacy_step.PresentInt(selected.HandleSlot)).Canonical
+        var task legacy_model.TaskState = machine.Tasks[legacy_channel.TaskIndex(machine, taskID)]
+        if legacy_channel.Terminal(task.Status) {
+            return task.TerminalSequence
+        }
+        return 0
+    }
+    var channelID text = legacy_value.Slot(activation.Slots, legacy_step.PresentInt(selected.ChannelSlot)).Canonical
+    if selected.Kind == model.SelectCaseKind.Send {
+        if SendReady(machine, reservations, channelID) {
+            return machine.Channels[legacy_channel.ChannelIndex(machine, channelID)].FreeSequence
+        }
+        return 0
+    }
+    if ReceiveReady(machine, reservations, channelID) {
+        var offset int = Count(reservations, channelID, false)
+        return machine.Channels[legacy_channel.ChannelIndex(machine, channelID)].Messages[offset].ReadySequence
+    }
+    return 0
+}
+
+func ReadyCase(machine legacy_model.Machine, activation legacy_model.Activation,
+    step model.SelectStep, reservations []Reservation) int {
+    var chosen int = -1
+    var sequence int = 0
+    for index, item in step.Cases {
+        var candidate int = ReadySequence(machine, activation, item, reservations)
+        if candidate != 0 && (chosen == -1 || candidate < sequence) {
+            chosen = index
+            sequence = candidate
+        }
+    }
+    if chosen == -1 && step.DefaultTarget != none {
+        return len(step.Cases)
+    }
+    return chosen
+}
+
+func Select(machine legacy_model.Machine, activation legacy_model.Activation,
+    step model.SelectStep, reservations []Reservation) Decision {
+    var chosen int = ReadyCase(machine, activation, step, reservations)
+    if chosen == -1 {
+        return Decision{Ready: false, Reservations: reservations}
+    }
+    if chosen == len(step.Cases) || step.Cases[chosen].Kind == model.SelectCaseKind.Await {
+        return Decision{Ready: true, Reservations: reservations}
+    }
+    var selected model.SelectCase = step.Cases[chosen]
+    var channelID text = legacy_value.Slot(activation.Slots, legacy_step.PresentInt(selected.ChannelSlot)).Canonical
+    return Decision{Ready: true, Reservations: Reserve(reservations, channelID, selected.Kind == model.SelectCaseKind.Send)}
+}

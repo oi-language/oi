@@ -10,6 +10,11 @@ type Value struct {
     NamedIdentity model.TypeIdentity?
 }
 
+type ValueResult struct {
+    Value Value?
+    Failure diagnostic.Diagnostic?
+}
+
 type SlotValue struct {
     SlotID int
     Value Value?
@@ -93,6 +98,7 @@ type ChannelState struct {
     SenderIDs []text
     MessageCommit int
     FreeSequence int
+    ReceiverHolder text
 }
 
 type Machine struct {
@@ -142,4 +148,5 @@ type SelectionDecode struct {
 type ArgumentCrossing struct {
     Machine Machine
     Values []Value
+    SourceSlots []SlotValue
 }

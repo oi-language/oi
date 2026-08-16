@@ -7,6 +7,7 @@ import "oi/skills/debug-oi/internal/legacy_channel"
 import "oi/skills/debug-oi/internal/legacy_frame"
 import "oi/skills/debug-oi/internal/legacy_model"
 import "oi/skills/debug-oi/internal/legacy_scheduler"
+import "oi/skills/debug-oi/internal/legacy_select"
 import "oi/skills/debug-oi/internal/legacy_step"
 import "oi/skills/debug-oi/internal/legacy_value"
 import "oi/skills/debug-oi/internal/model"
@@ -71,6 +72,13 @@ func RunTask(program model.Program, machine legacy_model.Machine, taskIndex int,
             instruction.Kind == model.InstructionKind.Jump {
             var transition legacy_model.Transition = legacy_action.Advance(program, function, machine, activation, instruction)
             machine = legacy_scheduler.PutCurrent(transition.Machine, taskIndex, transition.Activation)
+            if transition.Failure != none {
+                machine = FailFrame(program, machine, taskIndex, legacy_step.PresentDiagnostic(transition.Failure))
+                if machine.Tasks[taskIndex].Status == legacy_model.TaskStatus.Running {
+                    continue
+                }
+                return machine
+            }
             continue
         }
         if instruction.Kind == model.InstructionKind.Call {
@@ -118,9 +126,12 @@ func RunTask(program model.Program, machine legacy_model.Machine, taskIndex int,
             var step model.LaunchStep = legacy_step.PresentLaunch(instruction.Launch)
             var sourceIndex int = len(activation.LaunchedTaskIDs)
             var taskID text = activation.TaskID + "/" + [canonical nonnegative decimal text for {sourceIndex}]
-            var crossed legacy_model.ArgumentCrossing = legacy_action.Cross(program, machine, activation.Slots, step.Arguments)
+            var childFunction model.Function = legacy_step.Function(program, step.CalleeFunctionID)
+            var crossed legacy_model.ArgumentCrossing = legacy_action.Cross(program, machine, activation.Slots, step.Arguments,
+                taskID + "/a0", childFunction.ParameterSlots)
             machine = crossed.Machine
             var arguments []legacy_model.Value = crossed.Values
+            activation.Slots = crossed.SourceSlots
             activation.Slots = legacy_value.Put(activation.Slots, step.HandleSlot,
                 legacy_value.Handle(legacy_step.SlotType(program, step.HandleSlot), taskID))
             activation.LaunchedTaskIDs = append(activation.LaunchedTaskIDs, taskID)
@@ -141,7 +152,9 @@ func RunTask(program model.Program, machine legacy_model.Machine, taskIndex int,
             machine.Tasks[childIndex].Observed = true
             machine = legacy_step.AddEvent(machine, report.EventKind.Await, step.Location, taskID)
             if machine.Tasks[childIndex].Failure != none {
-                machine = legacy_scheduler.CancelOthers(machine, activation.ID, taskID, activation.TaskID)
+                if step.Completion.Mode == model.FailureMode.Propagate {
+                    machine = legacy_scheduler.CancelOthers(machine, activation.ID, taskID, activation.TaskID)
+                }
                 machine = FailureCompletion(program, machine, taskIndex, activation, step.Completion,
                     legacy_step.Frame(legacy_step.PresentDiagnostic(machine.Tasks[childIndex].Failure), "await", step.Location))
                 if machine.Tasks[taskIndex].Status == legacy_model.TaskStatus.Running {
@@ -170,7 +183,12 @@ func RunTask(program model.Program, machine legacy_model.Machine, taskIndex int,
         }
         if instruction.Kind == model.InstructionKind.Channel || instruction.Kind == model.InstructionKind.Send ||
             instruction.Kind == model.InstructionKind.Receive || instruction.Kind == model.InstructionKind.Select {
-            var transition legacy_model.Transition = legacy_channel.Advance(program, machine, activation, instruction, journal)
+            var transition legacy_model.Transition
+            if instruction.Kind == model.InstructionKind.Select {
+                transition = legacy_select.Advance(machine, activation, legacy_step.PresentSelect(instruction.Select), journal)
+            } else {
+                transition = legacy_channel.Advance(program, machine, activation, instruction)
+            }
             machine = legacy_scheduler.PutCurrent(transition.Machine, taskIndex, transition.Activation)
             if transition.Failure != none {
                 machine = FailFrame(program, machine, taskIndex, legacy_step.PresentDiagnostic(transition.Failure))

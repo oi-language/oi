@@ -5,6 +5,7 @@ import "oi/skills/debug-oi/internal/legacy_channel"
 import "oi/skills/debug-oi/internal/legacy_model"
 import "oi/skills/debug-oi/internal/legacy_step"
 import "oi/skills/debug-oi/internal/legacy_value"
+import "oi/skills/debug-oi/internal/legacy_wake"
 import "oi/skills/debug-oi/internal/model"
 import "oi/skills/debug-oi/internal/report"
 
@@ -239,13 +240,22 @@ func Wake(program model.Program, machine legacy_model.Machine) legacy_model.Mach
             blocked = append(blocked, index)
         }
     }
+    var reservations []legacy_wake.Reservation = []legacy_wake.Reservation{}
     for index in BlockOrder(machine, blocked) {
         var task legacy_model.TaskState = machine.Tasks[index]
         var ready bool = false
         if task.BlockKind == legacy_model.BlockKind.Send {
-            ready = legacy_channel.CanSend(machine, legacy_step.PresentText(task.BlockChannelID))
+            var channelID text = legacy_step.PresentText(task.BlockChannelID)
+            ready = legacy_wake.SendReady(machine, reservations, channelID)
+            if ready {
+                reservations = legacy_wake.Reserve(reservations, channelID, true)
+            }
         } else if task.BlockKind == legacy_model.BlockKind.Receive {
-            ready = legacy_channel.CanReceive(machine, legacy_step.PresentText(task.BlockChannelID))
+            var channelID text = legacy_step.PresentText(task.BlockChannelID)
+            ready = legacy_wake.ReceiveReady(machine, reservations, channelID)
+            if ready {
+                reservations = legacy_wake.Reserve(reservations, channelID, false)
+            }
         } else if task.BlockKind == legacy_model.BlockKind.Await {
             ready = Terminal(machine.Tasks[TaskIndex(machine, legacy_step.PresentText(task.BlockTaskID))].Status)
         } else {
@@ -254,7 +264,10 @@ func Wake(program model.Program, machine legacy_model.Machine) legacy_model.Mach
             if task.BlockKind == legacy_model.BlockKind.Join {
                 ready = JoinReady(machine, activation, instruction)
             } else {
-                ready = legacy_channel.SelectReady(machine, activation, legacy_step.PresentSelect(instruction.Select))
+                var decision legacy_wake.Decision = legacy_wake.Select(machine, activation,
+                    legacy_step.PresentSelect(instruction.Select), reservations)
+                ready = decision.Ready
+                reservations = decision.Reservations
             }
         }
         if ready {

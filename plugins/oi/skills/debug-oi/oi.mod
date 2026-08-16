@@ -9,9 +9,11 @@ source internal/legacy_frame/legacy_frame.oi
 source internal/legacy_model/legacy_model.oi
 source internal/legacy_runtime/legacy_runtime.oi
 source internal/legacy_scheduler/legacy_scheduler.oi
+source internal/legacy_select/legacy_select.oi
 source internal/legacy_step/legacy_step.oi
 source internal/legacy_validate/legacy_validate.oi
 source internal/legacy_value/legacy_value.oi
+source internal/legacy_wake/legacy_wake.oi
 source internal/model/model.oi
 source internal/replay/replay.oi
 source internal/report/report.oi
