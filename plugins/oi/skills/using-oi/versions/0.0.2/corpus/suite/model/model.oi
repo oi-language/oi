@@ -2,6 +2,7 @@ package model
 
 import "std/diagnostic"
 import "std/execution"
+import "std/fs"
 
 type Phase enum {
     Compile
@@ -22,6 +23,13 @@ type CompileStatus enum {
 type CompileExpectation struct {
     Status CompileStatus
     Diagnostics []diagnostic.Diagnostic
+}
+
+type SourceIdentity struct {
+    Path fs.Path
+    Bytes int
+    Characters int
+    SHA256 text
 }
 
 type ReplyIdentity struct {
@@ -57,6 +65,11 @@ type CompileObservation struct {
     CaseID text
     Target text
     Status CompileStatus
+    LanguageVersion text?
+    Module text?
+    SourceCount int
+    SourceCharacters int
+    Sources []SourceIdentity
     Diagnostics []diagnostic.Diagnostic
 }
 
@@ -124,6 +137,8 @@ type TargetEvidence struct {
     ManifestDigest text
     Artifacts []execution.ArtifactIdentity
     Sources []execution.ArtifactIdentity
+    SourceCount int
+    SourceCharacters int
     SourceDigest text
     Inputs []InputEvidence
     InputsDigest text

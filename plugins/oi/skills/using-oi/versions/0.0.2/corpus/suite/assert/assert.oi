@@ -3,6 +3,7 @@ package assert
 import "std/diagnostic"
 import "std/execution"
 import "oi/corpus/0.0.2/suite/model"
+import "oi/corpus/0.0.2/suite/runtime/loading"
 
 func Fail(detail text) unit {
     stop("CORPUS_ASSERTION_FAILED", detail)
@@ -105,36 +106,15 @@ func OperationsMatch(
     return true
 }
 
-func Integrity(
-    caseValue model.Case,
-    observation model.RuntimeObservation,
-) bool {
-    return [true exactly when {caseValue.Target}, {observation.Target}, and {observation.Evidence.Target} are the same normalized version-root-relative target;
-        {observation.Evidence} independently verifies exact Oi version, module, structured entry, manifest order, ordered artifacts, and ordered decoded project source identities,
-        and its ManifestDigest and SourceDigest are recomputed from those protected materials by frozen runtime/execution.md framing;
-        {observation.Receipt} has those exact language, module, entry, manifest, artifact, input, mapping, authority, policy, and character fields;
-        every source-ordered input evidence has exact position/name and a protected canonical typed value that projects to the same-index public receipt input;
-        every structured mapping independently frames effect module/path/name, ordered signature parameters and result with exact canonical Type frames,
-        authorities, and host mapping, then recomputes its public Identity fields and Digest;
-        authorities are canonical and recompute AuthoritiesIdentity; optional policy frames exact mode and ordered named limits around its protected canonical value;
-        InputsDigest, MappingsDigest, authority identity, and policy identity are recomputed exactly, including optional presence;
-        budgets are name-byte-ordered with exact nonnegative actual/limit values and bind the public loaded/project character fields;
-        {observation.ReceiptCanonical} is the exact frozen receipt frame recomputed from those independent materials, budgets, and public receipt fields;
-        {observation.Journal}.Policy equals the protected evidence policy value and public operations equal journal entries in order;
-        every operation input, result, failure, and present Reply digest is recomputed from the journal's protected canonical typed values;
-        direct-ID creation is limited to TaskLaunch, ChannelCreate, MessageCommit, and Select; every allocated oN has one leading Allocation record and then one fixed boundary Kind;
-        TaskCompletion and DetachNotification use owner/registry oN allocations, all other first operation IDs obey their frozen rules, and Started transitions have exactly one later terminal transition with
-        unchanged kind, location, and inputs despite permitted interleaving, and no terminal transition is followed by the same ID;
-        Indeterminate is only an external Effect; Cancelled is only an already-Started Effect's host-controlled cancellation acknowledgement on that ID
-        or a cancellable task, detach, or lifecycle boundary; ordinary Effect failure remains Failed,
-        Completed receipt terminal has no Failure; any causal root-ending Failed, Indeterminate, or Cancelled operation projects Failed with its exact Failure;
-        direct program execution never projects Stopped; all operation outputs and failures match their states;
-        present or absent Reply fields match {observation.Reply} exactly, including its protected canonical typed value]
-}
-
-func Receipt(caseValue model.Case, observation model.RuntimeObservation) unit {
+func Receipt(caseValue model.Case, compileValue model.CompileObservation, observation model.RuntimeObservation) unit {
     if caseValue.Phase != model.Phase.Runtime || caseValue.Receipt == none {
         Fail("receipt assertion requires one runtime expectation")
+    }
+    if observation.Target != caseValue.Target || observation.Evidence.Target != caseValue.Target {
+        Fail("receipt identity or digest mismatch: " + caseValue.ID)
+    }
+    if !loading.CompileSourcesMatch(compileValue, observation.Evidence) {
+        Fail("compile/runtime source identity mismatch: " + caseValue.ID)
     }
     var expected model.ReceiptExpectation = PresentReceipt(caseValue.Receipt)
     var actual execution.ExecutionReceipt = observation.Receipt
@@ -173,7 +153,7 @@ func Receipt(caseValue model.Case, observation model.RuntimeObservation) unit {
             Fail("Reply identity mismatch: " + caseValue.ID)
         }
     }
-    if !Integrity(caseValue, observation) {
+    if !loading.Integrity(caseValue, compileValue, observation) {
         Fail("receipt identity or digest mismatch: " + caseValue.ID)
     }
 }
@@ -277,10 +257,14 @@ func Observations(cases []model.Case, values model.SuiteObservations) unit {
         if caseValue.Phase == model.Phase.Runtime {
             runtimeCases = runtimeCases + 1
             var runtimeMatches int = 0
-            for runtimeValue in values.Runtime {
-                if runtimeValue.CaseID == caseValue.ID && runtimeValue.Target == caseValue.Target {
-                    runtimeMatches = runtimeMatches + 1
-                    Receipt(caseValue, runtimeValue)
+            for compileValue in values.Compile {
+                if compileValue.CaseID == caseValue.ID && compileValue.Target == caseValue.Target {
+                    for runtimeValue in values.Runtime {
+                        if runtimeValue.CaseID == caseValue.ID && runtimeValue.Target == caseValue.Target {
+                            runtimeMatches = runtimeMatches + 1
+                            Receipt(caseValue, compileValue, runtimeValue)
+                        }
+                    }
                 }
             }
             if runtimeMatches != 1 {

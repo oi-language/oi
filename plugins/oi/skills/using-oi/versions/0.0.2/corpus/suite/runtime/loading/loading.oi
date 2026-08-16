@@ -6,6 +6,55 @@ import "oi/corpus/0.0.2/suite/catalog"
 import "oi/corpus/0.0.2/suite/model"
 import "oi/corpus/0.0.2/suite/runtime/legacy"
 
+func PresentText(value text?) text {
+    return [the exact present text in {value}]
+}
+
+func CompileSourcesMatch(actual model.CompileObservation, evidence model.TargetEvidence) bool {
+    if actual.LanguageVersion == none || actual.Module == none || actual.SourceCount != len(actual.Sources) ||
+        evidence.SourceCount != len(evidence.Sources) || actual.SourceCount != evidence.SourceCount ||
+        actual.SourceCharacters != evidence.SourceCharacters || PresentText(actual.LanguageVersion) != "0.0.2" ||
+        evidence.LanguageVersion != "Oi 0.0.2" ||
+        PresentText(actual.Module) != evidence.Module {
+        return false
+    }
+    var characters int = 0
+    for index, source in actual.Sources {
+        var observed execution.ArtifactIdentity = evidence.Sources[index]
+        characters = characters + source.Characters
+        if text(source.Path) != observed.Path || source.Bytes != observed.Bytes || source.Characters != observed.Characters ||
+            source.SHA256 != observed.SHA256 {
+            return false
+        }
+    }
+    return characters == actual.SourceCharacters
+}
+
+func Integrity(caseValue model.Case, compileValue model.CompileObservation, observation model.RuntimeObservation) bool {
+    return [true exactly when {compileValue} is the trusted direct loader/compiler report for {caseValue.Target} and its exact language, module, source count/characters,
+        and ordered Source identities are cross-bound to {observation.Evidence}; {caseValue.Target}, {observation.Target}, and {observation.Evidence.Target} are the same normalized version-root-relative target;
+        {observation.Evidence} verifies structured entry, manifest order, ordered artifacts, and ordered decoded project source identities,
+        and its ManifestDigest and SourceDigest are recomputed from those protected materials by frozen runtime/execution.md framing;
+        {observation.Receipt} has those exact language, module, entry, manifest, artifact, input, mapping, authority, policy, and character fields;
+        every source-ordered input evidence has exact position/name and a protected canonical typed value that projects to the same-index public receipt input;
+        every structured mapping frames effect module/path/name, ordered signature parameters and result with exact canonical Type frames,
+        authorities, and host mapping, then recomputes its public Identity fields and Digest;
+        authorities are canonical and recompute AuthoritiesIdentity; optional policy frames exact mode and ordered named limits around its protected canonical value;
+        InputsDigest, MappingsDigest, authority identity, and policy identity are recomputed exactly, including optional presence;
+        budgets are name-byte-ordered with exact nonnegative actual/limit values and bind the public loaded/project character fields;
+        {observation.ReceiptCanonical} is the exact frozen receipt frame recomputed from those materials, budgets, and public receipt fields;
+        {observation.Journal}.Policy equals the protected evidence policy value and public operations equal journal entries in order;
+        every operation input, result, failure, and present Reply digest is recomputed from the journal's protected canonical typed values;
+        direct-ID creation is limited to TaskLaunch, ChannelCreate, MessageCommit, and Select; every allocated oN has one leading Allocation record and then one fixed boundary Kind;
+        TaskCompletion and DetachNotification use owner/registry oN allocations, all other first operation IDs obey their frozen rules, and Started transitions have exactly one later terminal transition with
+        unchanged kind, location, and inputs despite permitted interleaving, and no terminal transition is followed by the same ID;
+        Indeterminate is only an external Effect; Cancelled is only an already-Started Effect's host-controlled cancellation acknowledgement on that ID
+        or a cancellable task, detach, or lifecycle boundary; ordinary Effect failure remains Failed,
+        Completed receipt terminal has no Failure; any causal root-ending Failed, Indeterminate, or Cancelled operation projects Failed with its exact Failure;
+        direct program execution never projects Stopped; all operation outputs and failures match their states;
+        present or absent Reply fields match {observation.Reply} exactly, including its protected canonical typed value]
+}
+
 func AttachedCancellation() model.Case {
     operations := legacy.Atomic(execution.OperationKind.TaskLaunch, "main.oi:14:5")
     operations = legacy.Append(operations, legacy.Atomic(execution.OperationKind.TaskLaunch, "main.oi:15:5"))
