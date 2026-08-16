@@ -1,5 +1,6 @@
 package collections
 
+import "std/diagnostic"
 import "std/execution"
 import "oi/corpus/0.0.2/suite/catalog"
 import "oi/corpus/0.0.2/suite/model"
@@ -73,7 +74,13 @@ func ChannelProgress() model.Case {
 
 func Cases() []model.Case {
     return []model.Case{
-        catalog.CompileCase("collections", "corpus/valid/collections", model.Status.Pass, "none"),
+        catalog.CompileCase(
+            "collections",
+            "corpus/valid/collections",
+            model.Status.Pass,
+            "none",
+            []diagnostic.Diagnostic{},
+        ),
         Failed("missing-map-key", "corpus/runtime/missing-map-key", "MISSING_KEY"),
         Failed("duplicate-map-key", "corpus/runtime/duplicate-map-key", "DUPLICATE_KEY"),
         Failed("duplicate-set-element", "corpus/runtime/duplicate-set-element", "DUPLICATE_KEY"),

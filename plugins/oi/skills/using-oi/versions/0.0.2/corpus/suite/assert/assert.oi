@@ -28,15 +28,23 @@ func Catalog(cases []model.Case) unit {
         if item.Phase == model.Phase.Runtime && item.Receipt == none {
             Fail("runtime case lacks a receipt expectation: " + item.ID)
         }
+        if item.Status == model.Status.StaticFail {
+            if item.Compile.Status != model.CompileStatus.Fail || len(item.Compile.Diagnostics) == 0 ||
+                item.Compile.Diagnostics[0].Category != item.Category {
+                Fail("static-fail case lacks its complete diagnostic expectation: " + item.ID)
+            }
+        } else if item.Compile.Status != model.CompileStatus.Pass || len(item.Compile.Diagnostics) != 0 {
+            Fail("compile-pass case contains a failure expectation: " + item.ID)
+        }
     }
 }
 
 func PresentReceipt(value model.ReceiptExpectation?) model.ReceiptExpectation {
-    return [the exact present model.ReceiptExpectation in {value}]
+    return derive [the exact present model.ReceiptExpectation in {value}]
 }
 
 func PresentFailure(value diagnostic.Diagnostic?) diagnostic.Diagnostic {
-    return [the exact present diagnostic.Diagnostic in {value}]
+    return derive [the exact present diagnostic.Diagnostic in {value}]
 }
 
 func PresentText(value text?) text {
@@ -53,6 +61,26 @@ func PresentValue(value execution.ValueIdentity?) execution.ValueIdentity {
 
 func PresentTypedValue(value execution.TypedValue?) execution.TypedValue {
     return [the exact present execution.TypedValue in {value}]
+}
+
+func PresentExecutionReceipt(value execution.ExecutionReceipt?) execution.ExecutionReceipt {
+    return derive [the exact present execution.ExecutionReceipt in {value}]
+}
+
+func PresentJournal(value execution.ExecutionJournal?) execution.ExecutionJournal {
+    return derive [the exact present execution.ExecutionJournal in {value}]
+}
+
+func DiagnosticsMatch(expected []diagnostic.Diagnostic, actual []diagnostic.Diagnostic) bool {
+    return [true exactly when {expected} and {actual} have equal length and every same-index Diagnostic has exact Category, Phase,
+        Location, Detail, and source-ordered Trace values]
+}
+
+func Compile(caseValue model.Case, actual model.CompileObservation) unit {
+    if actual.CaseID != caseValue.ID || actual.Target != caseValue.Target || actual.Status != caseValue.Compile.Status ||
+        !DiagnosticsMatch(caseValue.Compile.Diagnostics, actual.Diagnostics) {
+        Fail("compile observation mismatch: " + caseValue.ID)
+    }
 }
 
 func ReplyValueMatches(expected model.ReplyIdentity, value execution.TypedValue) bool {
@@ -78,33 +106,43 @@ func OperationsMatch(
 }
 
 func Integrity(
-    receipt execution.ExecutionReceipt,
-    journal execution.ExecutionJournal,
-    expectedReply execution.TypedValue?,
+    caseValue model.Case,
+    observation model.RuntimeObservation,
 ) bool {
-    return [true exactly when {receipt}, {journal}, and {expectedReply} obey the frozen runtime/execution.md canonical framing:
-        artifact and source identities match the verified ordered manifest; every input, mapping, authority, policy, operation input/result,
-        and present Reply digest is recomputed from its protected canonical typed value; public operations equal journal entries in order;
+    return [true exactly when {caseValue.Target}, {observation.Target}, and {observation.Evidence.Target} are the same normalized version-root-relative target;
+        {observation.Evidence} independently verifies exact Oi version, module, structured entry, manifest order, ordered artifacts, and ordered decoded project source identities,
+        and its ManifestDigest and SourceDigest are recomputed from those protected materials by frozen runtime/execution.md framing;
+        {observation.Receipt} has those exact language, module, entry, manifest, artifact, input, mapping, authority, policy, and character fields;
+        every source-ordered input evidence has exact position/name and a protected canonical typed value that projects to the same-index public receipt input;
+        every structured mapping independently frames effect module/path/name, ordered signature parameters and result with exact canonical Type frames,
+        authorities, and host mapping, then recomputes its public Identity fields and Digest;
+        authorities are canonical and recompute AuthoritiesIdentity; optional policy frames exact mode and ordered named limits around its protected canonical value;
+        InputsDigest, MappingsDigest, authority identity, and policy identity are recomputed exactly, including optional presence;
+        budgets are name-byte-ordered with exact nonnegative actual/limit values and bind the public loaded/project character fields;
+        {observation.ReceiptCanonical} is the exact frozen receipt frame recomputed from those independent materials, budgets, and public receipt fields;
+        {observation.Journal}.Policy equals the protected evidence policy value and public operations equal journal entries in order;
+        every operation input, result, failure, and present Reply digest is recomputed from the journal's protected canonical typed values;
         direct-ID creation is limited to TaskLaunch, ChannelCreate, MessageCommit, and Select; every allocated oN has one leading Allocation record and then one fixed boundary Kind;
         TaskCompletion and DetachNotification use owner/registry oN allocations, all other first operation IDs obey their frozen rules, and Started transitions have exactly one later terminal transition with
         unchanged kind, location, and inputs despite permitted interleaving, and no terminal transition is followed by the same ID;
         Indeterminate is only an external Effect; Cancelled is only an already-Started Effect's host-controlled cancellation acknowledgement on that ID
         or a cancellable task, detach, or lifecycle boundary; ordinary Effect failure remains Failed,
-        all operation outputs and failures match their terminal states, and present or absent Reply fields match {expectedReply} exactly]
+        Completed receipt terminal has no Failure; any causal root-ending Failed, Indeterminate, or Cancelled operation projects Failed with its exact Failure;
+        direct program execution never projects Stopped; all operation outputs and failures match their states;
+        present or absent Reply fields match {observation.Reply} exactly, including its protected canonical typed value]
 }
 
-func Receipt(
-    caseValue model.Case,
-    actual execution.ExecutionReceipt,
-    journal execution.ExecutionJournal,
-    expectedReply execution.TypedValue?,
-) unit {
+func Receipt(caseValue model.Case, observation model.RuntimeObservation) unit {
     if caseValue.Phase != model.Phase.Runtime || caseValue.Receipt == none {
         Fail("receipt assertion requires one runtime expectation")
     }
     var expected model.ReceiptExpectation = PresentReceipt(caseValue.Receipt)
+    var actual execution.ExecutionReceipt = observation.Receipt
     if actual.Terminal != expected.Terminal || !OperationsMatch(expected.Operations, actual.Operations) {
         Fail("receipt terminal or operation schedule mismatch: " + caseValue.ID)
+    }
+    if actual.Terminal == execution.TerminalStatus.Stopped {
+        Fail("direct program receipt unexpectedly stopped: " + caseValue.ID)
     }
     if expected.FailureCategory == none {
         if actual.Failure != none {
@@ -120,22 +158,138 @@ func Receipt(
         }
     }
     if caseValue.Reply == none {
-        if expectedReply != none || actual.ReplyOperationID != none || actual.Reply != none {
+        if observation.Reply != none || actual.ReplyOperationID != none || actual.Reply != none {
             Fail("unexpected Reply: " + caseValue.ID)
         }
     } else {
-        if expectedReply == none || actual.ReplyOperationID == none || actual.Reply == none {
+        if observation.Reply == none || actual.ReplyOperationID == none || actual.Reply == none {
             Fail("missing Reply: " + caseValue.ID)
         }
         var expectedIdentity model.ReplyIdentity = PresentReply(caseValue.Reply)
-        var typedValue execution.TypedValue = PresentTypedValue(expectedReply)
+        var typedValue execution.TypedValue = PresentTypedValue(observation.Reply)
         var actualIdentity execution.ValueIdentity = PresentValue(actual.Reply)
         if !ReplyValueMatches(expectedIdentity, typedValue) ||
             actualIdentity.Type != expectedIdentity.Type || actualIdentity.Digest != expectedIdentity.Digest {
             Fail("Reply identity mismatch: " + caseValue.ID)
         }
     }
-    if !Integrity(actual, journal, expectedReply) {
+    if !Integrity(caseValue, observation) {
         Fail("receipt identity or digest mismatch: " + caseValue.ID)
     }
+}
+
+func CountsZero(value model.ResumeCounts) bool {
+    return value.Entry == 0 && value.Effect == 0 && value.Judgment == 0 && value.Task == 0 && value.Channel == 0 &&
+        value.Await == 0 && value.Join == 0 && value.Reply == 0
+}
+
+func ResumeNoRepeat(value model.ResumeObservation, freshObservation model.RuntimeObservation) unit {
+    if value.FreshReceipt == none || value.FreshJournal == none || value.FreshReceiptCanonical == none || value.Failure != none ||
+        value.JournalDelta != 0 || !CountsZero(value.Counts) {
+        Fail("resume-no-repeat contains resumed work")
+    }
+    var freshReceipt execution.ExecutionReceipt = PresentExecutionReceipt(value.FreshReceipt)
+    var freshJournal execution.ExecutionJournal = PresentJournal(value.FreshJournal)
+    var freshCanonical text = PresentText(value.FreshReceiptCanonical)
+    if !(freshCanonical == freshObservation.ReceiptCanonical && freshCanonical == value.ResumedReceiptCanonical &&
+        value.JournalConsumed == len(freshJournal.Entries) &&
+        len(freshJournal.Entries) == len(value.ResumedJournal.Entries) &&
+        [true exactly when {freshReceipt} and {freshJournal} equal {freshObservation.Receipt} and {freshObservation.Journal};
+            {freshCanonical} and {value.ResumedReceiptCanonical} are the exact frozen canonical frames of
+            {freshReceipt} and {value.ResumedReceipt}; those receipts are byte-identical and
+            {freshJournal} and {value.ResumedJournal} have byte-identical protected canonical journal frames]) {
+        Fail("resume-no-repeat changed receipt or journal")
+    }
+}
+
+func ResumeVersionMismatch(value model.ResumeObservation, runtimeObservation model.RuntimeObservation) unit {
+    if value.FreshReceipt != none || value.FreshJournal != none || value.FreshReceiptCanonical != none || value.JournalDelta != 0 ||
+        value.JournalConsumed != 0 || !CountsZero(value.Counts) || len(value.ResumedJournal.Entries) != 0 ||
+        len(value.ResumedReceipt.Operations) != 0 || value.ResumedReceipt.ReplyOperationID != none || value.ResumedReceipt.Reply != none ||
+        value.ResumedReceipt.Terminal != execution.TerminalStatus.Failed || value.ResumedReceipt.Failure == none || value.Failure == none {
+        Fail("resume-version-mismatch crossed admission")
+    }
+    var actual diagnostic.Diagnostic = PresentFailure(value.ResumedReceipt.Failure)
+    var protected execution.TypedValue = PresentTypedValue(value.Failure)
+    var canonical text = "5:value1:24:type47:4:type1:24:kind7:failure4:args14:9:type-args1:04:body150:7:failure1:58:category23:" +
+        "RESUME_VERSION_MISMATCH5:phase7:runtime8:location10:target:1:16:detail32:run identity mismatch: OiVersion5:trace10:5:trace1:0"
+    if actual.Category != "RESUME_VERSION_MISMATCH" || actual.Phase != "runtime" || actual.Location != "target:1:1" ||
+        actual.Detail != "run identity mismatch: OiVersion" || len(actual.Trace) != 0 ||
+        protected.Type != "failure" || protected.Canonical != canonical ||
+        protected.Digest != "bd381364b25de08688c9fff5f1a45bd23dc8984d0dd6e06c4093b1b1bd0c5442" ||
+        value.ResumedReceiptCanonical != runtimeObservation.ReceiptCanonical ||
+        !([true exactly when {value.ResumedReceipt} and {value.ResumedJournal} equal {runtimeObservation.Receipt} and {runtimeObservation.Journal};
+            {protected} is the exact frozen failure Value and SHA-256 identity for {actual}, and
+            {value.ResumedReceiptCanonical} is the exact frozen canonical frame of {value.ResumedReceipt}]) {
+        Fail("resume-version-mismatch failure mismatch")
+    }
+}
+
+func Resumes(runtimeValues []model.RuntimeObservation, values []model.ResumeObservation) unit {
+    if len(values) != 2 {
+        Fail("resume observation count mismatch")
+    }
+    var noRepeat int = 0
+    var versionMismatch int = 0
+    for item in values {
+        if !((item.CaseID == "resume-no-repeat" && item.Target == "corpus/runtime/resume-no-repeat") ||
+            (item.CaseID == "resume-version-mismatch" && item.Target == "corpus/runtime/resume-version-mismatch")) {
+            Fail("unexpected resume observation: " + item.CaseID)
+        }
+        var runtimeMatches int = 0
+        for runtimeValue in runtimeValues {
+            if runtimeValue.CaseID == item.CaseID && runtimeValue.Target == item.Target {
+                runtimeMatches = runtimeMatches + 1
+                if item.CaseID == "resume-no-repeat" {
+                    noRepeat = noRepeat + 1
+                    ResumeNoRepeat(item, runtimeValue)
+                } else {
+                    versionMismatch = versionMismatch + 1
+                    ResumeVersionMismatch(item, runtimeValue)
+                }
+            }
+        }
+        if runtimeMatches != 1 {
+            Fail("resume runtime observation mismatch: " + item.CaseID)
+        }
+    }
+    if noRepeat != 1 || versionMismatch != 1 {
+        Fail("missing or duplicate resume observation")
+    }
+}
+
+func Observations(cases []model.Case, values model.SuiteObservations) unit {
+    if len(values.Compile) != len(cases) {
+        Fail("compile observation count mismatch")
+    }
+    var runtimeCases int = 0
+    for caseValue in cases {
+        var compileMatches int = 0
+        for compileValue in values.Compile {
+            if compileValue.CaseID == caseValue.ID && compileValue.Target == caseValue.Target {
+                compileMatches = compileMatches + 1
+                Compile(caseValue, compileValue)
+            }
+        }
+        if compileMatches != 1 {
+            Fail("missing or duplicate compile observation: " + caseValue.ID)
+        }
+        if caseValue.Phase == model.Phase.Runtime {
+            runtimeCases = runtimeCases + 1
+            var runtimeMatches int = 0
+            for runtimeValue in values.Runtime {
+                if runtimeValue.CaseID == caseValue.ID && runtimeValue.Target == caseValue.Target {
+                    runtimeMatches = runtimeMatches + 1
+                    Receipt(caseValue, runtimeValue)
+                }
+            }
+            if runtimeMatches != 1 {
+                Fail("missing or duplicate runtime observation: " + caseValue.ID)
+            }
+        }
+    }
+    if len(values.Runtime) != runtimeCases {
+        Fail("runtime observation count mismatch")
+    }
+    Resumes(values.Runtime, values.Resume)
 }

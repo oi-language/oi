@@ -1,5 +1,6 @@
 package loading
 
+import "std/diagnostic"
 import "std/execution"
 import "oi/corpus/0.0.2/suite/catalog"
 import "oi/corpus/0.0.2/suite/model"
@@ -67,18 +68,24 @@ func DetachNotification() model.Case {
 
 func Cases() []model.Case {
     return []model.Case{
-        catalog.CompileCase("manifest", "corpus/valid/manifest", model.Status.Pass, "none"),
+        catalog.CompileCase("manifest", "corpus/valid/manifest", model.Status.Pass, "none", []diagnostic.Diagnostic{}),
         catalog.CompileCase(
             "missing-source-manifest",
             "corpus/invalid/missing-source-manifest",
             model.Status.StaticFail,
             "MISSING_SOURCE_MANIFEST",
+            []diagnostic.Diagnostic{
+                catalog.Diagnostic("MISSING_SOURCE_MANIFEST", "module", "oi.mod:1:1", "source manifest required"),
+            },
         ),
         catalog.CompileCase(
             "unsorted-source-manifest",
             "corpus/invalid/unsorted-source-manifest",
             model.Status.StaticFail,
             "SOURCE_MANIFEST_ORDER",
+            []diagnostic.Diagnostic{
+                catalog.Diagnostic("SOURCE_MANIFEST_ORDER", "module", "oi.mod:1:1", "auxiliary/auxiliary.oi"),
+            },
         ),
         AttachedCancellation(),
         AttachedFailureOrder(),

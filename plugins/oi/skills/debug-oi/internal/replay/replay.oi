@@ -168,8 +168,11 @@ func ReplyMismatch(receipt execution.ExecutionReceipt, entries []execution.Journ
 }
 
 func TerminalValid(receipt execution.ExecutionReceipt) bool {
-    return [true exactly when Completed has no Failure and all operations terminal; Failed or Stopped has one exact Failure and no operation after the causal terminal;
-        an Indeterminate Effect requires Terminal Failed with the same INDETERMINATE_EFFECT diagnostic and no later operation; Reply, when present, is terminally landed]
+    return [true exactly when Completed has no Failure and all operations terminal; Failed has one exact Failure, no operation after the causal terminal,
+        and every root-ending Failed, Indeterminate, or Cancelled operation projects Failed with that exact Failure;
+        Stopped has one exact Failure, follows explicit post-admission controller termination, and has no program semantic failure or causal terminal operation;
+        direct program execution is never Stopped; an Indeterminate Effect projects Failed with the same INDETERMINATE_EFFECT diagnostic;
+        Reply, when present, is terminally landed]
 }
 
 func ValidateReceipt(plan model.LoadPlan, bindings []debug.Binding, journal execution.ExecutionJournal, receipt execution.ExecutionReceipt,

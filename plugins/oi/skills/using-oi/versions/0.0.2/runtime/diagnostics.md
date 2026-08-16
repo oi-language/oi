@@ -10,6 +10,8 @@ Phase order: `parse`, `module`, `type`, `effect mapping`, `input binding`, `exec
 
 Required `UNMAPPED_EFFECT` is effect mapping at the first call/launch needing absent authority or mapping. Only a direct captured effect is optional; absence fails runtime there. Caller argument failure is input binding. `CONTEXT_ISOLATION_UNAVAILABLE` is execution admission.
 
+Pre-entry isolation=`CONTEXT_ISOLATION_UNAVAILABLE|execution admission|main token location|sealed context unavailable|[]`; after static, binding count=`INPUT_BINDING_MISMATCH|input binding|entry function-name location|expected E bindings; found A|[]`, E/A nats. Both yield that Failure in a Failed receipt, policy/reply absent, operations empty, target main/effects=0; TaskID/entry ActivationID=`root`/`root/a0`; other fields loaded; probes none.
+
 Runtime includes contract/semantic ambiguity, `NONDETERMINISTIC_DERIVATION`, `DUPLICATE_KEY`, `MISSING_KEY`, task depth/owner/cancellation, deadlock, indeterminate effect, operation/effect failures, and nonempty `stop` category. Other categories retain their producing rule's phase.
 
 ## Location and choice

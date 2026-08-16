@@ -1,15 +1,37 @@
 package catalog
 
+import "std/diagnostic"
 import "std/execution"
 import "oi/corpus/0.0.2/suite/model"
 
-func CompileCase(id text, target text, status model.Status, category text) model.Case {
+func Diagnostic(category text, phase text, location text, detail text) diagnostic.Diagnostic {
+    return diagnostic.Diagnostic{
+        Category: category,
+        Phase: phase,
+        Location: location,
+        Detail: detail,
+        Trace: []text{},
+    }
+}
+
+func CompileCase(
+    id text,
+    target text,
+    status model.Status,
+    category text,
+    diagnostics []diagnostic.Diagnostic,
+) model.Case {
+    var compileStatus model.CompileStatus = model.CompileStatus.Pass
+    if status == model.Status.StaticFail {
+        compileStatus = model.CompileStatus.Fail
+    }
     return model.Case{
         ID: id,
         Target: target,
         Phase: model.Phase.Compile,
         Status: status,
         Category: category,
+        Compile: model.CompileExpectation{Status: compileStatus, Diagnostics: diagnostics},
         Reply: none,
         Receipt: none,
     }
@@ -61,35 +83,69 @@ func RuntimeCase(
         Phase: model.Phase.Runtime,
         Status: status,
         Category: category,
+        Compile: model.CompileExpectation{Status: model.CompileStatus.Pass, Diagnostics: []diagnostic.Diagnostic{}},
         Reply: reply,
         Receipt: receipt,
     }
 }
 
 func CompileCases() []model.Case {
+    var pass []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
     return []model.Case{
-        CompileCase("types", "corpus/valid/types", model.Status.Pass, "none"),
-        CompileCase("semantic", "corpus/valid/semantic", model.Status.Pass, "none"),
-        CompileCase("import", "corpus/valid/import", model.Status.Pass, "none"),
-        CompileCase("entry-effect", "corpus/valid/entry-effect", model.Status.Pass, "none"),
-        CompileCase("core-standard", "corpus/valid/core-standard", model.Status.Pass, "none"),
-        CompileCase("control", "corpus/valid/control", model.Status.Pass, "none"),
-        CompileCase("oi-effect", "corpus/invalid/oi-effect", model.Status.StaticFail, "OI_EFFECT_FORBIDDEN"),
-        CompileCase("oi-anonymous", "corpus/invalid/oi-anonymous", model.Status.StaticFail, "OI_REQUIRES_NAMED_FUNCTION"),
-        CompileCase("nested-semantic", "corpus/invalid/nested-semantic", model.Status.StaticFail, "NESTED_SEMANTIC_EXPRESSION"),
-        CompileCase("implicit-named-conversion", "corpus/invalid/implicit-named-conversion", model.Status.StaticFail, "IMPLICIT_NAMED_CONVERSION"),
-        CompileCase("imperative-semantic", "corpus/invalid/imperative-semantic", model.Status.StaticFail, "IMPERATIVE_SEMANTIC_BLOCK"),
-        CompileCase("detach-endpoint", "corpus/invalid/detach-endpoint", model.Status.StaticFail, "ENDPOINT_SCOPE_ESCAPE"),
-        CompileCase("handoff-endpoint", "corpus/invalid/handoff-endpoint", model.Status.StaticFail, "ENDPOINT_SCOPE_ESCAPE"),
-        CompileCase("channel-handle-payload", "corpus/invalid/channel-handle-payload", model.Status.StaticFail, "RUNTIME_HANDLE_PAYLOAD"),
-        CompileCase("multiple-receivers", "corpus/invalid/multiple-receivers", model.Status.StaticFail, "RECEIVER_ALREADY_MOVED"),
-        CompileCase("channel-zero", "corpus/invalid/channel-zero", model.Status.StaticFail, "INVALID_CHANNEL_CAPACITY"),
-        CompileCase("entry-return-value", "corpus/invalid/entry-return-value", model.Status.StaticFail, "ENTRY_RETURN_VALUE"),
-        CompileCase("missing-semantic-type", "corpus/invalid/missing-semantic-type", model.Status.StaticFail, "MISSING_SEMANTIC_TYPE"),
-        CompileCase("entry-result", "corpus/invalid/entry-result", model.Status.StaticFail, "ENTRY_RESULT_FORBIDDEN"),
-        CompileCase("entry-call", "corpus/invalid/entry-call", model.Status.StaticFail, "ENTRY_NOT_CALLABLE"),
-        CompileCase("missing-entry", "corpus/invalid/missing-entry", model.Status.StaticFail, "MISSING_ENTRY"),
-        CompileCase("hidden-optional-effect", "corpus/invalid/hidden-optional-effect", model.Status.StaticFail, "UNMAPPED_EFFECT"),
+        CompileCase("types", "corpus/valid/types", model.Status.Pass, "none", pass),
+        CompileCase("semantic", "corpus/valid/semantic", model.Status.Pass, "none", pass),
+        CompileCase("import", "corpus/valid/import", model.Status.Pass, "none", pass),
+        CompileCase("entry-effect", "corpus/valid/entry-effect", model.Status.Pass, "none", pass),
+        CompileCase("core-standard", "corpus/valid/core-standard", model.Status.Pass, "none", pass),
+        CompileCase("control", "corpus/valid/control", model.Status.Pass, "none", pass),
+        CompileCase("oi-effect", "corpus/invalid/oi-effect", model.Status.StaticFail, "OI_EFFECT_FORBIDDEN", []diagnostic.Diagnostic{
+            Diagnostic("OI_EFFECT_FORBIDDEN", "type", "main.oi:9:5", "Notify"),
+        }),
+        CompileCase("oi-anonymous", "corpus/invalid/oi-anonymous", model.Status.StaticFail, "OI_REQUIRES_NAMED_FUNCTION", []diagnostic.Diagnostic{
+            Diagnostic("OI_REQUIRES_NAMED_FUNCTION", "type", "main.oi:6:5", "Worker"),
+        }),
+        CompileCase("nested-semantic", "corpus/invalid/nested-semantic", model.Status.StaticFail, "NESTED_SEMANTIC_EXPRESSION", []diagnostic.Diagnostic{
+            Diagnostic("NESTED_SEMANTIC_EXPRESSION", "parse", "main.oi:3:34", "["),
+        }),
+        CompileCase("implicit-named-conversion", "corpus/invalid/implicit-named-conversion", model.Status.StaticFail, "IMPLICIT_NAMED_CONVERSION", []diagnostic.Diagnostic{
+            Diagnostic("IMPLICIT_NAMED_CONVERSION", "type", "main.oi:5:12", "Right"),
+        }),
+        CompileCase("imperative-semantic", "corpus/invalid/imperative-semantic", model.Status.StaticFail, "IMPERATIVE_SEMANTIC_BLOCK", []diagnostic.Diagnostic{
+            Diagnostic("IMPERATIVE_SEMANTIC_BLOCK", "parse", "main.oi:3:24", "first"),
+        }),
+        CompileCase("detach-endpoint", "corpus/invalid/detach-endpoint", model.Status.StaticFail, "ENDPOINT_SCOPE_ESCAPE", []diagnostic.Diagnostic{
+            Diagnostic("ENDPOINT_SCOPE_ESCAPE", "type", "main.oi:9:22", "link.Send"),
+        }),
+        CompileCase("handoff-endpoint", "corpus/invalid/handoff-endpoint", model.Status.StaticFail, "ENDPOINT_SCOPE_ESCAPE", []diagnostic.Diagnostic{
+            Diagnostic("ENDPOINT_SCOPE_ESCAPE", "type", "main.oi:9:18", "link.Receive"),
+        }),
+        CompileCase("channel-handle-payload", "corpus/invalid/channel-handle-payload", model.Status.StaticFail, "RUNTIME_HANDLE_PAYLOAD", []diagnostic.Diagnostic{
+            Diagnostic("RUNTIME_HANDLE_PAYLOAD", "type", "main.oi:4:21", "sender"),
+        }),
+        CompileCase("multiple-receivers", "corpus/invalid/multiple-receivers", model.Status.StaticFail, "RECEIVER_ALREADY_MOVED", []diagnostic.Diagnostic{
+            Diagnostic("RECEIVER_ALREADY_MOVED", "type", "main.oi:10:26", "link.Receive"),
+        }),
+        CompileCase("channel-zero", "corpus/invalid/channel-zero", model.Status.StaticFail, "INVALID_CHANNEL_CAPACITY", []diagnostic.Diagnostic{
+            Diagnostic("INVALID_CHANNEL_CAPACITY", "type", "main.oi:4:27", "0"),
+        }),
+        CompileCase("entry-return-value", "corpus/invalid/entry-return-value", model.Status.StaticFail, "ENTRY_RETURN_VALUE", []diagnostic.Diagnostic{
+            Diagnostic("ENTRY_RETURN_VALUE", "type", "main.oi:4:5", "main value return"),
+        }),
+        CompileCase("missing-semantic-type", "corpus/invalid/missing-semantic-type", model.Status.StaticFail, "MISSING_SEMANTIC_TYPE", []diagnostic.Diagnostic{
+            Diagnostic("MISSING_SEMANTIC_TYPE", "type", "main.oi:3:14", "["),
+        }),
+        CompileCase("entry-result", "corpus/invalid/entry-result", model.Status.StaticFail, "ENTRY_RESULT_FORBIDDEN", []diagnostic.Diagnostic{
+            Diagnostic("ENTRY_RESULT_FORBIDDEN", "type", "main.oi:3:6", "main result"),
+        }),
+        CompileCase("entry-call", "corpus/invalid/entry-call", model.Status.StaticFail, "ENTRY_NOT_CALLABLE", []diagnostic.Diagnostic{
+            Diagnostic("ENTRY_NOT_CALLABLE", "type", "main.oi:4:5", "main"),
+        }),
+        CompileCase("missing-entry", "corpus/invalid/missing-entry", model.Status.StaticFail, "MISSING_ENTRY", []diagnostic.Diagnostic{
+            Diagnostic("MISSING_ENTRY", "type", "main.oi:1:1", "lowercase main"),
+        }),
+        CompileCase("hidden-optional-effect", "corpus/invalid/hidden-optional-effect", model.Status.StaticFail, "UNMAPPED_EFFECT", []diagnostic.Diagnostic{
+            Diagnostic("UNMAPPED_EFFECT", "effect mapping", "main.oi:14:12", "network.fetch"),
+        }),
     }
 }
 

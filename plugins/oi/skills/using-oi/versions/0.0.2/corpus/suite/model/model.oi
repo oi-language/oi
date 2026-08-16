@@ -1,5 +1,6 @@
 package model
 
+import "std/diagnostic"
 import "std/execution"
 
 type Phase enum {
@@ -11,6 +12,16 @@ type Status enum {
     Pass
     StaticFail
     RuntimeFail
+}
+
+type CompileStatus enum {
+    Pass
+    Fail
+}
+
+type CompileExpectation struct {
+    Status CompileStatus
+    Diagnostics []diagnostic.Diagnostic
 }
 
 type ReplyIdentity struct {
@@ -37,6 +48,141 @@ type Case struct {
     Phase Phase
     Status Status
     Category text
+    Compile CompileExpectation
     Reply ReplyIdentity?
     Receipt ReceiptExpectation?
+}
+
+type CompileObservation struct {
+    CaseID text
+    Target text
+    Status CompileStatus
+    Diagnostics []diagnostic.Diagnostic
+}
+
+type EntryEvidence struct {
+    Name text
+    Path text
+    Line int
+    Column int
+}
+
+type InputEvidence struct {
+    Position int
+    Name text
+    Value execution.TypedValue
+}
+
+type EffectEvidence struct {
+    Module text
+    Path text
+    Name text
+}
+
+type ParameterEvidence struct {
+    Position int
+    Name text
+    Type text
+}
+
+type SignatureEvidence struct {
+    Parameters []ParameterEvidence
+    Result text
+}
+
+type MappingEvidence struct {
+    Effect EffectEvidence
+    Signature SignatureEvidence
+    Authorities []text
+    HostMapping text
+    Identity execution.MappingIdentity
+}
+
+type LimitEvidence struct {
+    Name text
+    Value int
+}
+
+type PolicyEvidence struct {
+    Mode text
+    Limits []LimitEvidence
+    Value execution.TypedValue
+}
+
+type BudgetEvidence struct {
+    Name text
+    Actual int
+    Limit int
+}
+
+type TargetEvidence struct {
+    Target text
+    LanguageVersion text
+    Module text
+    Entry EntryEvidence
+    Manifest []text
+    ManifestDigest text
+    Artifacts []execution.ArtifactIdentity
+    Sources []execution.ArtifactIdentity
+    SourceDigest text
+    Inputs []InputEvidence
+    InputsDigest text
+    Mappings []MappingEvidence
+    MappingsDigest text
+    Authorities []text
+    AuthoritiesIdentity execution.ValueIdentity
+    Policy PolicyEvidence?
+    PolicyIdentity execution.ValueIdentity?
+    Budgets []BudgetEvidence
+}
+
+type RuntimeObservation struct {
+    CaseID text
+    Target text
+    Evidence TargetEvidence
+    Receipt execution.ExecutionReceipt
+    ReceiptCanonical text
+    Journal execution.ExecutionJournal
+    Reply execution.TypedValue?
+}
+
+type ResumeCounts struct {
+    Entry int
+    Effect int
+    Judgment int
+    Task int
+    Channel int
+    Await int
+    Join int
+    Reply int
+}
+
+type ResumeObservation struct {
+    CaseID text
+    Target text
+    FreshReceipt execution.ExecutionReceipt?
+    ResumedReceipt execution.ExecutionReceipt
+    FreshJournal execution.ExecutionJournal?
+    ResumedJournal execution.ExecutionJournal
+    FreshReceiptCanonical text?
+    ResumedReceiptCanonical text
+    JournalDelta int
+    JournalConsumed int
+    Counts ResumeCounts
+    Failure execution.TypedValue?
+}
+
+type SuiteObservations struct {
+    Compile []CompileObservation
+    Runtime []RuntimeObservation
+    Resume []ResumeObservation
+}
+
+type SuiteRequest struct {
+    Observations SuiteObservations?
+}
+
+type SuiteReport struct {
+    Cases []Case
+    Validated bool
 }

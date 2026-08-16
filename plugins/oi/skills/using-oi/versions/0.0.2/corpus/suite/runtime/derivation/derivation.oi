@@ -1,5 +1,6 @@
 package derivation
 
+import "std/diagnostic"
 import "std/execution"
 import "oi/corpus/0.0.2/suite/catalog"
 import "oi/corpus/0.0.2/suite/model"
@@ -100,12 +101,15 @@ func Cases() []model.Case {
         catalog.Operation(execution.OperationKind.Derivation, execution.OperationStatus.Failed, "main.oi:9:29"),
     }
     return []model.Case{
-        catalog.CompileCase("derive", "corpus/valid/derive", model.Status.Pass, "none"),
+        catalog.CompileCase("derive", "corpus/valid/derive", model.Status.Pass, "none", []diagnostic.Diagnostic{}),
         catalog.CompileCase(
             "unbounded-semantic-result",
             "corpus/invalid/unbounded-semantic-result",
             model.Status.StaticFail,
             "UNBOUNDED_SEMANTIC_RESULT",
+            []diagnostic.Diagnostic{
+                catalog.Diagnostic("UNBOUNDED_SEMANTIC_RESULT", "type", "main.oi:4:25", "[]text"),
+            },
         ),
         catalog.RuntimeCase(
             "nondeterministic-derivation",

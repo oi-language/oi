@@ -22,7 +22,7 @@ Sequence is contiguous from zero. State is `Started | Completed | Failed | Indet
 
 Each ActivationID has an operation counter from zero. In deterministic statement/operand encounter order, a boundary without a canonical ID gets `<ActivationID>/o<N>`: before `Started`, append completed allocation with its location/digest/ID, then increment. Loops allocate per encounter.
 
-TaskLaunch, ChannelCreate, MessageCommit, and SelectRecord use TaskID/ChannelID/MessageID/SelectID directly, without allocation. Only own states reuse a direct ID. Allocated `oN` starts with one Allocation, then uses one fixed boundary Kind. TaskCompletion and DetachNotification allocate owner/registry `oN`, record Started then one terminal, and carry TaskID in input/result. A blocked send/receive without a persisted ID uses `oN`; its MessageCommit uses MessageID. Every other boundary owns a persisted ID or allocates `oN`.
+TaskLaunch, ChannelCreate, MessageCommit, and Select use TaskID/ChannelID/MessageID/SelectID directly, without allocation. Only own states reuse a direct ID. Allocated `oN` starts with one Allocation, then uses one fixed boundary Kind. TaskCompletion and DetachNotification allocate owner/registry `oN`, record Started then one terminal, and carry TaskID in input/result. A blocked send/receive without a persisted ID uses `oN`; its MessageCommit uses MessageID. Every other boundary owns a persisted ID or allocates `oN`.
 
 One operation's states share its ID. Block/wake/re-observe allocates nothing. Replay reuses IDs, restores counters after greatest N, and never advances direct-ID boundaries. Handles serialize only canonical IDs, never objects, context, conversation, locals, trace, tool output, memory, buffers, authority tokens, or host bindings.
 

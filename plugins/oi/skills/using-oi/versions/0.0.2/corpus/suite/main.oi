@@ -9,12 +9,12 @@ import "oi/corpus/0.0.2/suite/runtime/execution"
 import "oi/corpus/0.0.2/suite/runtime/legacy"
 import "oi/corpus/0.0.2/suite/runtime/loading"
 
-effect Reply(value []model.Case) unit {
+effect Reply(value model.SuiteReport) unit {
     uses caller.reply
     contract [deliver {value} exactly once to the caller]
 }
 
-func main() {
+func main(request model.SuiteRequest) {
     runtimeCases := execution.Cases(
         loading.Cases(),
         collections.Cases(),
@@ -23,5 +23,11 @@ func main() {
     )
     cases := catalog.Cases(runtimeCases)
     assert.Catalog(cases)
-    Reply(cases)
+    if request.Observations == none {
+        Reply(model.SuiteReport{Cases: cases, Validated: false})
+        return
+    }
+    var observations model.SuiteObservations = derive [the exact present model.SuiteObservations in {request.Observations}]
+    assert.Observations(cases, observations)
+    Reply(model.SuiteReport{Cases: cases, Validated: true})
 }
