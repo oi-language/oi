@@ -62,6 +62,10 @@ effect ReadVerifiedSource(root fs.Path, path fs.Path) LogicalReadProbe {
 
 func FindNearestModule(target fs.Path) ModuleProbe {
     var state fs.Observation = fs.Scan(target)
+    return FindNearestObservedModule(target, state)
+}
+
+func FindNearestObservedModule(target fs.Path, state fs.Observation) ModuleProbe {
     var directory fs.Path = TargetDirectory(target, state)
     for candidate in AncestorDirectories(directory) {
         var path fs.Path = Join(candidate, "oi.mod")
@@ -113,13 +117,14 @@ func ReadLogicalSource(root fs.Path, path fs.Path) LogicalReadProbe {
 }
 
 func LoadGraph(target fs.Path) Graph {
-    var probe ModuleProbe = FindNearestModule(target)
+    var targetState fs.Observation = fs.Scan(target)
+    var probe ModuleProbe = FindNearestObservedModule(target, targetState)
     if probe.Manifest == none {
         return EmptyGraph(probe.Diagnostics)
     }
     var manifest model.ModuleManifest = PresentManifest(probe.Manifest)
     if manifest.Version == model.LanguageVersion.Oi0_0_1 {
-        return LoadLegacyGraph(target, manifest)
+        return LoadLegacyGraph(target, targetState, manifest)
     }
     return LoadManifestGraph(manifest)
 }
@@ -174,10 +179,18 @@ func LoadManifestGraph(manifest model.ModuleManifest) Graph {
     return graph
 }
 
-func LoadLegacyGraph(target fs.Path, manifest model.ModuleManifest) Graph {
-    var root TargetRead = ReadLegacyTarget(target, manifest.Version)
+func LoadLegacyGraph(
+    target fs.Path,
+    targetState fs.Observation,
+    manifest model.ModuleManifest,
+) Graph {
+    var root TargetRead = ReadLegacyTarget(target, targetState, manifest.Version)
+    var selectedManifest model.ModuleManifest? = manifest
+    if len(root.Diagnostics) != 0 {
+        selectedManifest = none
+    }
     var graph Graph = Graph{
-        Manifest: manifest,
+        Manifest: selectedManifest,
         RootPaths: root.Paths,
         Sources: root.Sources,
         SourceIdentities: []model.SourceIdentity{},
@@ -199,8 +212,11 @@ func LoadLegacyGraph(target fs.Path, manifest model.ModuleManifest) Graph {
     return graph
 }
 
-func ReadLegacyTarget(target fs.Path, version model.LanguageVersion) TargetRead {
-    var observation fs.Observation = fs.Scan(target)
+func ReadLegacyTarget(
+    target fs.Path,
+    observation fs.Observation,
+    version model.LanguageVersion,
+) TargetRead {
     var directory fs.Path = TargetDirectory(target, observation)
     var directoryState fs.Observation = fs.Scan(directory)
     var paths []fs.Path = []fs.Path{}

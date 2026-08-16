@@ -48,6 +48,8 @@ func Source(path fs.Path, content text, version model.LanguageVersion) model.Sou
         parse or type facts decidable without resolving another source, all with exact locations; main is absent
         from declarations; StaticFacts never contain INVALID_CHANNEL_CAPACITY, RUNTIME_HANDLE_PAYLOAD, RECEIVER_ALREADY_MOVED,
         ENDPOINT_SCOPE_ESCAPE, INVALID_TASK_OWNER, or UNMAPPED_EFFECT;
+        for Oi0_0_1, an imperative semantic block emits IMPERATIVE_SEMANTIC_BLOCK in phase parse at its first imperative
+        semantic item, with that first token as Detail, matching the exact frozen 0.0.1 classification;
         for Oi0_0_2 only, recognize the exact 0.0.2 grammar additions, but emit at most the first deterministic bootstrap capability
         fact COMPILER_COLLECTION_UNAVAILABLE in phase type at the canonical first map or set token with exact token detail, or
         COMPILER_DERIVATION_UNAVAILABLE in phase type at the canonical first derive token with detail derive; emit neither for
