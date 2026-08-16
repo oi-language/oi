@@ -1,0 +1,64 @@
+package legacy_execute
+
+import "std/diagnostic"
+import "oi/skills/debug-oi/internal/legacy_channel"
+import "oi/skills/debug-oi/internal/legacy_frame"
+import "oi/skills/debug-oi/internal/legacy_model"
+import "oi/skills/debug-oi/internal/legacy_runtime"
+import "oi/skills/debug-oi/internal/legacy_scheduler"
+import "oi/skills/debug-oi/internal/legacy_step"
+import "oi/skills/debug-oi/internal/legacy_validate"
+import "oi/skills/debug-oi/internal/model"
+import "oi/skills/debug-oi/internal/report"
+
+func Execute(program model.Program, initialSlots []model.InitialSlot, journal []text,
+    transcript []model.LegacyEffectResult) model.Execution {
+    var invalid diagnostic.Diagnostic? = legacy_validate.Plan(program, initialSlots, journal, transcript)
+    if invalid != none {
+        return model.Execution{Events: []report.Event{}, Diagnostics: []diagnostic.Diagnostic{
+            legacy_step.PresentDiagnostic(invalid)}, RequiredTranscriptEntries: []text{}}
+    }
+    var arguments []legacy_model.Value = []legacy_model.Value{}
+    for slot in initialSlots {
+        arguments = append(arguments, legacy_model.Value{TypeID: slot.TypeID, Canonical: slot.Canonical, NamedIdentity: slot.NamedIdentity})
+    }
+    var machine legacy_model.Machine = legacy_model.Machine{Events: []report.Event{}, RequiredTranscriptEntries: []text{},
+        UsedTranscriptIDs: []text{}, Tasks: []legacy_model.TaskState{}, Channels: []legacy_model.ChannelState{},
+        ActivationCounters: []legacy_model.Counter{}, JournalIndex: 0, NextReadySequence: 1, NextBlockSequence: 1,
+        NextStateSequence: 1, LastSelectLocation: "target:1:1"}
+    machine = legacy_scheduler.Register(program, machine, "root", "", -1, "", "target:1:1", program.EntryFunctionID, arguments)
+    for {
+        machine = legacy_scheduler.Wake(program, machine)
+        if len(machine.RequiredTranscriptEntries) != 0 || legacy_scheduler.Terminal(machine.Tasks[0].Status) {
+            break
+        }
+        var runnable int? = legacy_scheduler.RunnableIndex(machine)
+        if runnable == none {
+            var blockedIndex int = legacy_scheduler.DeadlockIndex(machine)
+            machine.Tasks[blockedIndex].Status = legacy_model.TaskStatus.Running
+            machine = legacy_frame.Fail(program, machine, blockedIndex,
+                legacy_scheduler.DeadlockFailure(machine, blockedIndex))
+        } else {
+            machine = legacy_runtime.RunTask(program, machine, legacy_step.PresentInt(runnable), transcript, journal)
+        }
+    }
+    if len(machine.RequiredTranscriptEntries) != 0 {
+        return model.Execution{Events: machine.Events, Diagnostics: []diagnostic.Diagnostic{},
+            RequiredTranscriptEntries: machine.RequiredTranscriptEntries}
+    }
+    if machine.JournalIndex != len(journal) {
+        return model.Execution{Events: machine.Events, Diagnostics: []diagnostic.Diagnostic{
+            legacy_channel.Mismatch(machine.LastSelectLocation, "Record")}, RequiredTranscriptEntries: []text{}}
+    }
+    if machine.Tasks[0].Failure != none {
+        return model.Execution{Events: machine.Events, Diagnostics: []diagnostic.Diagnostic{
+            legacy_step.PresentDiagnostic(machine.Tasks[0].Failure)}, RequiredTranscriptEntries: []text{}}
+    }
+    for item in transcript {
+        if !legacy_step.HasText(machine.UsedTranscriptIDs, item.OperationID) {
+            var failure diagnostic.Diagnostic = diagnostic.New("UNUSED_TRANSCRIPT_ENTRY", "runtime", "target:1:1", item.OperationID)
+            return model.Execution{Events: machine.Events, Diagnostics: []diagnostic.Diagnostic{failure}, RequiredTranscriptEntries: []text{}}
+        }
+    }
+    return model.Execution{Events: machine.Events, Diagnostics: []diagnostic.Diagnostic{}, RequiredTranscriptEntries: []text{}}
+}

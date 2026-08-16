@@ -4,8 +4,11 @@ source internal/identity/identity.oi
 source internal/legacy_action/legacy_action.oi
 source internal/legacy_bridge/legacy_bridge.oi
 source internal/legacy_channel/legacy_channel.oi
+source internal/legacy_execute/legacy_execute.oi
+source internal/legacy_frame/legacy_frame.oi
 source internal/legacy_model/legacy_model.oi
 source internal/legacy_runtime/legacy_runtime.oi
+source internal/legacy_scheduler/legacy_scheduler.oi
 source internal/legacy_step/legacy_step.oi
 source internal/legacy_validate/legacy_validate.oi
 source internal/legacy_value/legacy_value.oi

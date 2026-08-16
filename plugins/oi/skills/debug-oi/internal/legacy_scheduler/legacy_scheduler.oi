@@ -1,0 +1,291 @@
+package legacy_scheduler
+
+import "std/diagnostic"
+import "oi/skills/debug-oi/internal/legacy_channel"
+import "oi/skills/debug-oi/internal/legacy_model"
+import "oi/skills/debug-oi/internal/legacy_step"
+import "oi/skills/debug-oi/internal/legacy_value"
+import "oi/skills/debug-oi/internal/model"
+import "oi/skills/debug-oi/internal/report"
+
+func Terminal(status legacy_model.TaskStatus) bool {
+    return status == legacy_model.TaskStatus.Completed || status == legacy_model.TaskStatus.Failed || status == legacy_model.TaskStatus.Cancelled
+}
+
+func TaskIndex(machine legacy_model.Machine, taskID text) int {
+    for index, task in machine.Tasks {
+        if task.ID == taskID {
+            return index
+        }
+    }
+    return [the unique task index for validated task ID {taskID}]
+}
+
+func PresentFrame(value legacy_model.Frame?) legacy_model.Frame {
+    return [the exact present legacy_model.Frame in {value}]
+}
+
+func Current(machine legacy_model.Machine, taskIndex int) legacy_model.Activation {
+    return machine.Tasks[taskIndex].Frames[len(machine.Tasks[taskIndex].Frames) - 1].Activation
+}
+
+func PutCurrent(machine legacy_model.Machine, taskIndex int, activation legacy_model.Activation) legacy_model.Machine {
+    var frameIndex int = len(machine.Tasks[taskIndex].Frames) - 1
+    machine.Tasks[taskIndex].Frames[frameIndex].Activation = activation
+    return machine
+}
+
+func NewActivation(program model.Program, functionID int, taskID text, activationID text) legacy_model.Activation {
+    var function model.Function = legacy_step.Function(program, functionID)
+    return legacy_model.Activation{TaskID: taskID, ID: activationID, FunctionID: functionID,
+        PC: legacy_step.FirstInstruction(function), Slots: []legacy_model.SlotValue{}, EffectEncounter: 0,
+        ChannelCreation: 0, SelectEncounter: 0, LaunchedTaskIDs: []text{}}
+}
+
+func Queue(machine legacy_model.Machine, taskIndex int) legacy_model.Machine {
+    machine.Tasks[taskIndex].Status = legacy_model.TaskStatus.Runnable
+    machine.Tasks[taskIndex].ReadySequence = machine.NextReadySequence
+    machine.NextReadySequence = machine.NextReadySequence + 1
+    machine.Tasks[taskIndex].BlockKind = legacy_model.BlockKind.None
+    machine.Tasks[taskIndex].BlockChannelID = none
+    machine.Tasks[taskIndex].BlockTaskID = none
+    return machine
+}
+
+func Block(machine legacy_model.Machine, taskIndex int, kind legacy_model.BlockKind, location text,
+    channelID text?, taskID text?) legacy_model.Machine {
+    machine.Tasks[taskIndex].Status = legacy_model.TaskStatus.Blocked
+    machine.Tasks[taskIndex].BlockKind = kind
+    machine.Tasks[taskIndex].BlockLocation = location
+    machine.Tasks[taskIndex].BlockChannelID = channelID
+    machine.Tasks[taskIndex].BlockTaskID = taskID
+    machine.Tasks[taskIndex].BlockSequence = machine.NextBlockSequence
+    machine.NextBlockSequence = machine.NextBlockSequence + 1
+    return machine
+}
+
+func Finish(machine legacy_model.Machine, taskIndex int, status legacy_model.TaskStatus,
+    value legacy_model.Value?, failure diagnostic.Diagnostic?) legacy_model.Machine {
+    machine.Tasks[taskIndex].Status = status
+    machine.Tasks[taskIndex].Value = value
+    machine.Tasks[taskIndex].Failure = failure
+    machine.Tasks[taskIndex].TerminalSequence = machine.NextStateSequence
+    machine.NextStateSequence = machine.NextStateSequence + 1
+    machine.Tasks[taskIndex].BlockKind = legacy_model.BlockKind.None
+    machine.Tasks[taskIndex].BlockChannelID = none
+    machine.Tasks[taskIndex].BlockTaskID = none
+    return machine
+}
+
+func StartTask(program model.Program, machine legacy_model.Machine, taskIndex int) legacy_model.Machine {
+    if machine.Tasks[taskIndex].Started {
+        return machine
+    }
+    var activation legacy_model.Activation = Current(machine, taskIndex)
+    var function model.Function = legacy_step.Function(program, activation.FunctionID)
+    machine = legacy_step.AddEvent(machine, report.EventKind.Enter, function.EntryLocation, activation.ID)
+    for index, slotID in function.ParameterSlots {
+        var value legacy_model.Value = machine.Tasks[taskIndex].InitialArguments[index]
+        activation.Slots = legacy_value.Put(activation.Slots, slotID, value)
+        machine = legacy_step.AddEvent(machine, report.EventKind.Bind, legacy_step.SlotLocation(program, slotID), value.Canonical)
+    }
+    machine = PutCurrent(machine, taskIndex, activation)
+    machine.Tasks[taskIndex].Started = true
+    machine.ActivationCounters = append(machine.ActivationCounters, legacy_model.Counter{Key: machine.Tasks[taskIndex].ID, Next: 1})
+    return machine
+}
+
+func Register(program model.Program, machine legacy_model.Machine, taskID text, parentTaskID text, sourceIndex int,
+    ownerActivationID text, launchLocation text, functionID int, arguments []legacy_model.Value) legacy_model.Machine {
+    var activation legacy_model.Activation = NewActivation(program, functionID, taskID, taskID + "/a0")
+    machine.Tasks = append(machine.Tasks, legacy_model.TaskState{ID: taskID, ParentTaskID: parentTaskID, SourceIndex: sourceIndex,
+        OwnerActivationID: ownerActivationID, LaunchLocation: launchLocation, Status: legacy_model.TaskStatus.Runnable,
+        Frames: []legacy_model.Frame{legacy_model.Frame{Activation: activation, ReturnSlot: none, Completion: none, CallLocation: none}},
+        InitialArguments: arguments, Started: false, BlockKind: legacy_model.BlockKind.None, BlockLocation: "",
+        BlockChannelID: none, BlockTaskID: none, BlockSequence: 0, ReadySequence: machine.NextReadySequence,
+        TerminalSequence: 0, Value: none, Failure: none, Observed: false})
+    machine.NextReadySequence = machine.NextReadySequence + 1
+    return machine
+}
+
+func RunnableIndex(machine legacy_model.Machine) int? {
+    var selected int? = none
+    for index, task in machine.Tasks {
+        if task.Status == legacy_model.TaskStatus.Runnable &&
+            (selected == none || task.ReadySequence < machine.Tasks[legacy_step.PresentInt(selected)].ReadySequence) {
+            selected = index
+        }
+    }
+    return selected
+}
+
+func Attached(machine legacy_model.Machine, ownerActivationID text) []int {
+    var result []int = []int{}
+    for index, task in machine.Tasks {
+        if task.OwnerActivationID == ownerActivationID {
+            result = append(result, index)
+        }
+    }
+    return result
+}
+
+func AllTerminal(machine legacy_model.Machine, indexes []int) bool {
+    for index in indexes {
+        if !Terminal(machine.Tasks[index].Status) {
+            return false
+        }
+    }
+    return true
+}
+
+func FirstFailure(machine legacy_model.Machine, indexes []int) int? {
+    var selected int? = none
+    for index in indexes {
+        if !machine.Tasks[index].Observed && machine.Tasks[index].Failure != none &&
+            (selected == none || machine.Tasks[index].SourceIndex < machine.Tasks[legacy_step.PresentInt(selected)].SourceIndex) {
+            selected = index
+        }
+    }
+    return selected
+}
+
+func JoinCanResolve(machine legacy_model.Machine, indexes []int) bool {
+    var failed int? = FirstFailure(machine, indexes)
+    if failed == none {
+        return AllTerminal(machine, indexes)
+    }
+    var failedSource int = machine.Tasks[legacy_step.PresentInt(failed)].SourceIndex
+    for index in indexes {
+        if machine.Tasks[index].SourceIndex < failedSource && !Terminal(machine.Tasks[index].Status) {
+            return false
+        }
+    }
+    return true
+}
+
+func CancelTree(machine legacy_model.Machine, taskIndex int, requesterTaskID text) legacy_model.Machine {
+    if Terminal(machine.Tasks[taskIndex].Status) {
+        return machine
+    }
+    var taskID text = machine.Tasks[taskIndex].ID
+    for childIndex, child in machine.Tasks {
+        if child.ParentTaskID == taskID {
+            machine = CancelTree(machine, childIndex, requesterTaskID)
+        }
+    }
+    var failure diagnostic.Diagnostic = diagnostic.New("TASK_CANCELLED", "runtime", machine.Tasks[taskIndex].LaunchLocation,
+        "cancelled by " + requesterTaskID)
+    return Finish(machine, taskIndex, legacy_model.TaskStatus.Cancelled, none, failure)
+}
+
+func CancelGreater(machine legacy_model.Machine, ownerActivationID text, sourceIndex int, requesterTaskID text) legacy_model.Machine {
+    for index, task in machine.Tasks {
+        if task.OwnerActivationID == ownerActivationID && task.SourceIndex > sourceIndex {
+            machine = CancelTree(machine, index, requesterTaskID)
+        }
+    }
+    return machine
+}
+
+func CancelOthers(machine legacy_model.Machine, ownerActivationID text, exceptTaskID text, requesterTaskID text) legacy_model.Machine {
+    for index, task in machine.Tasks {
+        if task.OwnerActivationID == ownerActivationID && task.ID != exceptTaskID {
+            machine = CancelTree(machine, index, requesterTaskID)
+        }
+    }
+    return machine
+}
+
+func JoinReady(machine legacy_model.Machine, activation legacy_model.Activation, instruction model.Instruction) bool {
+    if instruction.Kind == model.InstructionKind.Return {
+        return JoinCanResolve(machine, Attached(machine, activation.ID))
+    }
+    var step model.JoinStep = legacy_step.PresentJoin(instruction.Join)
+    var indexes []int = []int{}
+    for slotID in step.HandleSlots {
+        indexes = append(indexes, TaskIndex(machine, legacy_value.Slot(activation.Slots, slotID).Canonical))
+    }
+    return JoinCanResolve(machine, indexes)
+}
+
+func HasIndex(indexes []int, wanted int) bool {
+    for index in indexes {
+        if index == wanted {
+            return true
+        }
+    }
+    return false
+}
+
+func BlockOrder(machine legacy_model.Machine, indexes []int) []int {
+    var result []int = []int{}
+    for unused in indexes {
+        var selected int? = none
+        for index in indexes {
+            if !HasIndex(result, index) &&
+                (selected == none || machine.Tasks[index].BlockSequence < machine.Tasks[legacy_step.PresentInt(selected)].BlockSequence) {
+                selected = index
+            }
+        }
+        result = append(result, legacy_step.PresentInt(selected))
+    }
+    return result
+}
+
+func Wake(program model.Program, machine legacy_model.Machine) legacy_model.Machine {
+    var blocked []int = []int{}
+    for index, task in machine.Tasks {
+        if task.Status == legacy_model.TaskStatus.Blocked {
+            blocked = append(blocked, index)
+        }
+    }
+    for index in BlockOrder(machine, blocked) {
+        var task legacy_model.TaskState = machine.Tasks[index]
+        var ready bool = false
+        if task.BlockKind == legacy_model.BlockKind.Send {
+            ready = legacy_channel.CanSend(machine, legacy_step.PresentText(task.BlockChannelID))
+        } else if task.BlockKind == legacy_model.BlockKind.Receive {
+            ready = legacy_channel.CanReceive(machine, legacy_step.PresentText(task.BlockChannelID))
+        } else if task.BlockKind == legacy_model.BlockKind.Await {
+            ready = Terminal(machine.Tasks[TaskIndex(machine, legacy_step.PresentText(task.BlockTaskID))].Status)
+        } else {
+            var activation legacy_model.Activation = Current(machine, index)
+            var instruction model.Instruction = legacy_step.Instruction(legacy_step.Function(program, activation.FunctionID), activation.PC)
+            if task.BlockKind == legacy_model.BlockKind.Join {
+                ready = JoinReady(machine, activation, instruction)
+            } else {
+                ready = legacy_channel.SelectReady(machine, activation, legacy_step.PresentSelect(instruction.Select))
+            }
+        }
+        if ready {
+            machine = Queue(machine, index)
+        }
+    }
+    return machine
+}
+
+func DeadlockIndex(machine legacy_model.Machine) int {
+    var selected int? = none
+    for index, task in machine.Tasks {
+        if task.Status == legacy_model.TaskStatus.Blocked &&
+            (selected == none || task.BlockSequence < machine.Tasks[legacy_step.PresentInt(selected)].BlockSequence) {
+            selected = index
+        }
+    }
+    return legacy_step.PresentInt(selected)
+}
+
+func DeadlockFailure(machine legacy_model.Machine, blockedIndex int) diagnostic.Diagnostic {
+    var blocked legacy_model.TaskState = machine.Tasks[blockedIndex]
+    var detail text = "no runnable task or external wake; deadlock"
+    if blocked.BlockKind == legacy_model.BlockKind.Send {
+        for owner in machine.Tasks {
+            if owner.Status == legacy_model.TaskStatus.Blocked && owner.BlockKind == legacy_model.BlockKind.Await &&
+                owner.BlockTaskID != none && legacy_step.PresentText(owner.BlockTaskID) == blocked.ID {
+                detail = "no runnable task or external wake; " + blocked.ID + " waits to send on full " +
+                    legacy_step.PresentText(blocked.BlockChannelID) + " while " + owner.ID + " awaits " + blocked.ID
+            }
+        }
+    }
+    return diagnostic.New("DEADLOCK", "runtime", blocked.BlockLocation, detail)
+}

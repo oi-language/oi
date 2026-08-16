@@ -6,7 +6,7 @@ import "std/execution"
 import "std/fs"
 import "oi/skills/debug-oi/internal/identity"
 import "oi/skills/debug-oi/internal/legacy_bridge"
-import "oi/skills/debug-oi/internal/legacy_runtime"
+import "oi/skills/debug-oi/internal/legacy_execute"
 import "oi/skills/debug-oi/internal/model"
 import "oi/skills/debug-oi/internal/report"
 
@@ -17,6 +17,7 @@ effect CompileTarget(target fs.Path, bindings []debug.Binding, mappings []execut
         logical-read the nearest module, exact snapshot, declared sources, triggered runtime, and reachable standard packages once and return their actual TargetIdentity without source bodies, including the main token Location;
         validate source mapping compatibility and return actual normalized mapping fields with every digest independently recomputed; validate binding names/types/contracts before returning Crossed;
         for exact Oi 0.0.1 ignore proposed mappings and authorities, compile mapping-free replay IR, and let neither proposed value affect Target, Program, InitialSlots, LegacyTranscript, or diagnostics;
+        Target.EntryLocation is always the entry function name token used by current receipt admission, while every legacy Program.Function.EntryLocation is its declaration first token;
         a legacy entry named-contract rejection is TYPE_CONTRACT_MISMATCH, input binding, entry parameter identifier Location, declared named type exact source spelling Detail, and empty Trace;
         every legacy EffectSite StaticCallsiteID equals its effect call SourcePosition.Location; existing fixtures retain exact testdata/<fixture>/main.oi path labels despite local version manifests;
         record every compatibility probe as a separate host mapping attempt, never as a target Operation, and never invoke target main, target effects, Reply, subagents, handoff, or user interaction;
@@ -242,7 +243,7 @@ func Trace(target fs.Path, bindings []debug.Binding, journal execution.Execution
                 return report.LegacyFailed([]report.Event{},
                     []diagnostic.Diagnostic{Mismatch(legacy_bridge.OperationMismatch(operations, journal.Entries))})
             }
-            return legacy_bridge.Result(legacy_runtime.Execute(plan.Program, plan.InitialSlots,
+            return legacy_bridge.Result(legacy_execute.Execute(plan.Program, plan.InitialSlots,
                 legacy_bridge.TextValues(journal), plan.LegacyTranscript))
         }
         var receiptDiagnostics []diagnostic.Diagnostic = ValidateReceipt(plan, bindings, journal, receipt, transcript)

@@ -98,7 +98,7 @@ func Handle(typeID int, id text) legacy_model.Value {
     return legacy_model.Value{TypeID: typeID, Canonical: id, NamedIdentity: none}
 }
 
-func Selection(record text, selectID text, cases []model.SelectCase) legacy_model.Selection {
-    return [parse exactly one released runtime/channel.md SelectRecord from {record}; require its SelectID equals {selectID}, canonical case index is in {cases}, and related identity shape matches case kind;
-        return that zero-based CaseIndex and exact optional MessageID or TaskID; reject every noncanonical byte]
+func DecodeSelection(record text) legacy_model.SelectionDecode {
+    return [decode exactly one released runtime/channel.md canonical SelectRecord from {record}; on missing/extra fields, malformed delimiters, noncanonical decimal or UTF-8 return Valid false;
+        otherwise return Valid true with exact SelectID, zero-based CaseIndex, and optional MessageID or TaskID text, consuming every byte once]
 }

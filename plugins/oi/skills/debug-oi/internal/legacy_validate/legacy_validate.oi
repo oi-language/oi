@@ -10,7 +10,8 @@ func Plan(program model.Program, initialSlots []model.InitialSlot, journal []tex
         every Slot/Function/Instruction/control-flow/owner/result edge is compatible and each instruction has exactly its matching payload with inactive optionals absent;
         InitialSlots cover entry parameters once in declaration order with exact SlotID/TypeID/canonical/named identity; no raw Binding or contract remains;
         literals, operands, selectors, completions, select cases, computes, stores, calls, effects, launches, awaits, joins, channels, sends, receives, returns and stops obey all frozen union/arity/type/affinity rules;
-        every EffectSite StaticCallsiteID equals its exact frozen SourcePosition Location text; fixture locations retain the testdata/<fixture>/main.oi namespace despite local version manifests;
+        every Function EntryLocation is its declaration first-token Location; every EffectSite StaticCallsiteID equals its exact frozen SourcePosition Location text;
+        fixture locations retain the testdata/<fixture>/main.oi namespace despite local version manifests;
         Returned transcript entries have one LegacyEffectValue and no Failure; Failed entries have one Failure and no Value; OperationIDs are unique; journal records are canonical released channel records;
         choose the source-earliest invalid field and never invoke target code, an effect, user interaction, hidden dispatch, or ambient context]
 }

@@ -1,5 +1,6 @@
 package legacy_action
 
+import "oi/skills/debug-oi/internal/legacy_channel"
 import "oi/skills/debug-oi/internal/legacy_model"
 import "oi/skills/debug-oi/internal/legacy_step"
 import "oi/skills/debug-oi/internal/legacy_value"
@@ -14,6 +15,30 @@ func Values(slots []legacy_model.SlotValue, operands []model.Operand) []legacy_m
     return result
 }
 
+func Type(program model.Program, typeID int) model.TypeRef {
+    for item in program.Types {
+        if item.ID == typeID {
+            return item
+        }
+    }
+    return [the unique validated TypeRef for {typeID}]
+}
+
+func Cross(program model.Program, machine legacy_model.Machine, slots []legacy_model.SlotValue,
+    operands []model.Operand) legacy_model.ArgumentCrossing {
+    var values []legacy_model.Value = []legacy_model.Value{}
+    for operand in operands {
+        var value legacy_model.Value = legacy_value.Operand(slots, operand)
+        if Type(program, value.TypeID).Kind == model.TypeKind.Sender {
+            var copied legacy_model.ArgumentCrossing = legacy_channel.CopySender(machine, value)
+            machine = copied.Machine
+            value = copied.Values[0]
+        }
+        values = append(values, value)
+    }
+    return legacy_model.ArgumentCrossing{Machine: machine, Values: values}
+}
+
 func BranchLocation(program model.Program, condition model.Operand, function model.Function) text {
     if condition.Kind == model.OperandKind.Slot {
         return legacy_step.SlotLocation(program, legacy_step.PresentInt(condition.SlotID))
@@ -26,6 +51,11 @@ func Advance(program model.Program, function model.Function, machine legacy_mode
     if instruction.Kind == model.InstructionKind.Bind {
         var step model.BindStep = legacy_step.PresentBind(instruction.Bind)
         var value legacy_model.Value = legacy_value.Operand(activation.Slots, step.Source)
+        if Type(program, value.TypeID).Kind == model.TypeKind.Sender {
+            var copied legacy_model.ArgumentCrossing = legacy_channel.CopySender(machine, value)
+            machine = copied.Machine
+            value = copied.Values[0]
+        }
         activation.Slots = legacy_value.Put(activation.Slots, step.DestinationSlot, value)
         machine = legacy_step.AddEvent(machine, report.EventKind.Bind, legacy_step.SlotLocation(program, step.DestinationSlot), value.Canonical)
         activation.PC = step.Continuation
@@ -60,5 +90,6 @@ func Advance(program model.Program, function model.Function, machine legacy_mode
     } else {
         activation.PC = legacy_step.PresentJump(instruction.Jump).Target
     }
-    return legacy_model.Transition{Machine: machine, Activation: activation, Failure: none}
+    return legacy_model.Transition{Machine: machine, Activation: activation, Failure: none, Blocked: false,
+        BlockKind: legacy_model.BlockKind.None, BlockLocation: "", BlockChannelID: none, BlockTaskID: none}
 }

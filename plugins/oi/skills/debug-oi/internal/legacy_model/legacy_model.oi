@@ -20,10 +20,60 @@ type Counter struct {
     Next int
 }
 
+type TaskStatus enum {
+    Runnable
+    Running
+    Blocked
+    Completed
+    Failed
+    Cancelled
+}
+
+type BlockKind enum {
+    None
+    Await
+    Join
+    Send
+    Receive
+    Select
+}
+
+type Activation struct {
+    TaskID text
+    ID text
+    FunctionID int
+    PC int
+    Slots []SlotValue
+    EffectEncounter int
+    ChannelCreation int
+    SelectEncounter int
+    LaunchedTaskIDs []text
+}
+
+type Frame struct {
+    Activation Activation
+    ReturnSlot int?
+    Completion model.Completion?
+    CallLocation text?
+}
+
 type TaskState struct {
     ID text
+    ParentTaskID text
     SourceIndex int
     OwnerActivationID text
+    LaunchLocation text
+    Status TaskStatus
+    Frames []Frame
+    InitialArguments []Value
+    Started bool
+    BlockKind BlockKind
+    BlockLocation text
+    BlockChannelID text?
+    BlockTaskID text?
+    BlockSequence int
+    ReadySequence int
+    TerminalSequence int
     Value Value?
     Failure diagnostic.Diagnostic?
     Observed bool
@@ -32,12 +82,17 @@ type TaskState struct {
 type Message struct {
     ID text
     Value Value
+    ReadySequence int
 }
 
 type ChannelState struct {
     ID text
     Capacity int
     Messages []Message
+    SenderCopy int
+    SenderIDs []text
+    MessageCommit int
+    FreeSequence int
 }
 
 type Machine struct {
@@ -48,18 +103,10 @@ type Machine struct {
     Channels []ChannelState
     ActivationCounters []Counter
     JournalIndex int
-}
-
-type Activation struct {
-    TaskID text
-    ID text
-    FunctionID int
-    PC int
-    Slots []SlotValue
-    EffectCounters []Counter
-    ChannelCreation int
-    SelectEncounter int
-    LaunchedTaskIDs []text
+    NextReadySequence int
+    NextBlockSequence int
+    NextStateSequence int
+    LastSelectLocation text
 }
 
 type RunResult struct {
@@ -73,9 +120,26 @@ type Transition struct {
     Machine Machine
     Activation Activation
     Failure diagnostic.Diagnostic?
+    Blocked bool
+    BlockKind BlockKind
+    BlockLocation text
+    BlockChannelID text?
+    BlockTaskID text?
 }
 
 type Selection struct {
     CaseIndex int
     RelatedIdentity text?
+}
+
+type SelectionDecode struct {
+    Valid bool
+    SelectID text
+    CaseIndex int
+    RelatedIdentity text?
+}
+
+type ArgumentCrossing struct {
+    Machine Machine
+    Values []Value
 }

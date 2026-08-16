@@ -4,224 +4,202 @@ import "std/diagnostic"
 import "oi/skills/debug-oi/internal/identity"
 import "oi/skills/debug-oi/internal/legacy_action"
 import "oi/skills/debug-oi/internal/legacy_channel"
+import "oi/skills/debug-oi/internal/legacy_frame"
 import "oi/skills/debug-oi/internal/legacy_model"
+import "oi/skills/debug-oi/internal/legacy_scheduler"
 import "oi/skills/debug-oi/internal/legacy_step"
-import "oi/skills/debug-oi/internal/legacy_validate"
 import "oi/skills/debug-oi/internal/legacy_value"
 import "oi/skills/debug-oi/internal/model"
 import "oi/skills/debug-oi/internal/report"
 
-func Complete(machine legacy_model.Machine, value legacy_model.Value?, failure diagnostic.Diagnostic?, incomplete bool) legacy_model.RunResult {
-    return legacy_model.RunResult{Machine: machine, Value: value, Failure: failure, Incomplete: incomplete}
+func PresentCompletion(value model.Completion?) model.Completion {
+    return legacy_frame.PresentCompletion(value)
 }
 
-func RunActivation(program model.Program, machine legacy_model.Machine, activation legacy_model.Activation,
-    transcript []model.LegacyEffectResult, journal []text) legacy_model.RunResult {
-    var function model.Function = legacy_step.Function(program, activation.FunctionID)
+func FramesWithoutLast(frames []legacy_model.Frame) []legacy_model.Frame {
+    return legacy_frame.FramesWithoutLast(frames)
+}
+
+func PushCall(program model.Program, machine legacy_model.Machine, taskIndex int, step model.CallStep) legacy_model.Machine {
+    return legacy_frame.PushCall(program, machine, taskIndex, step)
+}
+
+func CancelAttached(machine legacy_model.Machine, activationID text, requesterTaskID text) legacy_model.Machine {
+    return legacy_frame.CancelAttached(machine, activationID, requesterTaskID)
+}
+
+func FailFrame(program model.Program, machine legacy_model.Machine, taskIndex int,
+    failure diagnostic.Diagnostic) legacy_model.Machine {
+    return legacy_frame.Fail(program, machine, taskIndex, failure)
+}
+
+func ReturnFrame(program model.Program, machine legacy_model.Machine, taskIndex int,
+    location text, value legacy_model.Value) legacy_model.Machine {
+    return legacy_frame.Return(program, machine, taskIndex, location, value)
+}
+
+func FailureCompletion(program model.Program, machine legacy_model.Machine, taskIndex int,
+    activation legacy_model.Activation, completion model.Completion, failure diagnostic.Diagnostic) legacy_model.Machine {
+    return legacy_frame.FailureCompletion(program, machine, taskIndex, activation, completion, failure)
+}
+
+func ObserveFailure(machine legacy_model.Machine, indexes []int, selected int, ownerActivationID text,
+    requesterTaskID text) legacy_model.Machine {
+    return legacy_frame.ObserveFailure(machine, indexes, selected, ownerActivationID, requesterTaskID)
+}
+
+func ImplicitJoin(program model.Program, machine legacy_model.Machine, taskIndex int,
+    activation legacy_model.Activation, function model.Function) legacy_model.Machine {
+    return legacy_frame.ImplicitJoin(program, machine, taskIndex, activation, function)
+}
+
+func ExplicitJoin(program model.Program, machine legacy_model.Machine, taskIndex int,
+    activation legacy_model.Activation, step model.JoinStep) legacy_model.Machine {
+    return legacy_frame.ExplicitJoin(program, machine, taskIndex, activation, step)
+}
+
+func RunTask(program model.Program, machine legacy_model.Machine, taskIndex int,
+    transcript []model.LegacyEffectResult, journal []text) legacy_model.Machine {
+    machine = legacy_scheduler.StartTask(program, machine, taskIndex)
+    machine.Tasks[taskIndex].Status = legacy_model.TaskStatus.Running
     for {
+        var activation legacy_model.Activation = legacy_scheduler.Current(machine, taskIndex)
+        var function model.Function = legacy_step.Function(program, activation.FunctionID)
         var instruction model.Instruction = legacy_step.Instruction(function, activation.PC)
         if instruction.Kind == model.InstructionKind.Bind || instruction.Kind == model.InstructionKind.Store ||
             instruction.Kind == model.InstructionKind.Compute || instruction.Kind == model.InstructionKind.Branch ||
             instruction.Kind == model.InstructionKind.Jump {
             var transition legacy_model.Transition = legacy_action.Advance(program, function, machine, activation, instruction)
-            machine = transition.Machine
-            activation = transition.Activation
+            machine = legacy_scheduler.PutCurrent(transition.Machine, taskIndex, transition.Activation)
             continue
         }
         if instruction.Kind == model.InstructionKind.Call {
-            var step model.CallStep = legacy_step.PresentCall(instruction.Call)
-            var counter legacy_model.Counter = legacy_step.NextActivation(machine, activation.TaskID)
-            var childID text = activation.TaskID + "/a" + [canonical nonnegative decimal text for {counter.Next}]
-            machine = legacy_step.AdvanceActivation(machine, activation.TaskID)
-            var child legacy_model.RunResult = Start(program, step.CalleeFunctionID, activation.TaskID, childID,
-                legacy_action.Values(activation.Slots, step.Arguments), machine, transcript, journal)
-            machine = child.Machine
-            if child.Incomplete {
-                return child
-            }
-            if child.Failure != none {
-                var failure diagnostic.Diagnostic = legacy_step.PresentDiagnostic(child.Failure)
-                if step.Completion.Mode == model.FailureMode.Capture {
-                    var slotID int = legacy_step.PresentInt(step.Completion.OutcomeSlot)
-                    activation.Slots = legacy_value.Put(activation.Slots, slotID,
-                        legacy_value.FailedOutcome(legacy_step.SlotType(program, slotID), legacy_step.Frame(failure, "call", step.Location)))
-                    activation.PC = step.Completion.Continuation
-                    continue
-                }
-                return Complete(machine, none, legacy_step.Frame(failure, "call", step.Location), false)
-            }
-            if step.Completion.Mode == model.FailureMode.Capture {
-                var slotID int = legacy_step.PresentInt(step.Completion.OutcomeSlot)
-                activation.Slots = legacy_value.Put(activation.Slots, slotID, legacy_value.CompletedOutcome(legacy_step.SlotType(program, slotID), child.Value))
-            } else if step.ReturnSlot != none {
-                activation.Slots = legacy_value.Put(activation.Slots, legacy_step.PresentInt(step.ReturnSlot), legacy_value.PresentValue(child.Value))
-            }
-            activation.PC = step.Completion.Continuation
+            machine = PushCall(program, machine, taskIndex, legacy_step.PresentCall(instruction.Call))
             continue
         }
         if instruction.Kind == model.InstructionKind.Effect {
             var step model.EffectStep = legacy_step.PresentEffectStep(instruction.Effect)
-            var encounter int = legacy_step.NextEffect(activation, step.Site.StaticCallsiteID)
-            activation = legacy_step.AdvanceEffect(activation, step.Site.StaticCallsiteID)
+            var encounter int = legacy_step.NextEffect(activation)
+            activation = legacy_step.AdvanceEffect(activation)
             var operationID text = identity.OperationID(model.OperationIdentity{TaskID: activation.TaskID, ActivationID: activation.ID,
                 StaticCallsiteID: step.Site.StaticCallsiteID, EncounterIndex: encounter})
             machine = legacy_step.AddEvent(machine, report.EventKind.Effect, step.Site.Location, operationID)
             var found model.LegacyEffectResult? = legacy_step.Transcript(transcript, machine.UsedTranscriptIDs, operationID)
             if found == none {
                 machine.RequiredTranscriptEntries = append(machine.RequiredTranscriptEntries, operationID)
-                return Complete(machine, none, none, true)
+                return legacy_scheduler.PutCurrent(machine, taskIndex, activation)
             }
             var effect model.LegacyEffectResult = legacy_step.PresentEffect(found)
             machine.UsedTranscriptIDs = append(machine.UsedTranscriptIDs, operationID)
             if !legacy_step.EffectReturned(effect) {
-                var failure diagnostic.Diagnostic = legacy_step.PresentDiagnostic(effect.Failure)
-                if step.Completion.Mode == model.FailureMode.Capture {
-                    var slotID int = legacy_step.PresentInt(step.Completion.OutcomeSlot)
-                    activation.Slots = legacy_value.Put(activation.Slots, slotID, legacy_value.FailedOutcome(legacy_step.SlotType(program, slotID), failure))
-                    activation.PC = step.Completion.Continuation
+                machine = FailureCompletion(program, machine, taskIndex, activation, step.Completion,
+                    legacy_step.PresentDiagnostic(effect.Failure))
+                if machine.Tasks[taskIndex].Status == legacy_model.TaskStatus.Running {
                     continue
                 }
-                return Complete(machine, none, failure, false)
+                return machine
             }
             var effectValue model.LegacyEffectValue = legacy_step.PresentEffectValue(effect.Value)
             if step.Completion.Mode == model.FailureMode.Capture {
                 var slotID int = legacy_step.PresentInt(step.Completion.OutcomeSlot)
                 var raw legacy_model.Value = legacy_value.WithType(effectValue, legacy_step.SlotType(program, legacy_step.PresentInt(step.ResultSlot)))
-                activation.Slots = legacy_value.Put(activation.Slots, slotID, legacy_value.CompletedOutcome(legacy_step.SlotType(program, slotID), raw))
+                activation.Slots = legacy_value.Put(activation.Slots, slotID,
+                    legacy_value.CompletedOutcome(legacy_step.SlotType(program, slotID), raw))
             } else if step.ResultSlot != none {
                 var resultSlot int = legacy_step.PresentInt(step.ResultSlot)
-                activation.Slots = legacy_value.Put(activation.Slots, resultSlot, legacy_value.WithType(effectValue, legacy_step.SlotType(program, resultSlot)))
+                activation.Slots = legacy_value.Put(activation.Slots, resultSlot,
+                    legacy_value.WithType(effectValue, legacy_step.SlotType(program, resultSlot)))
             }
             activation.PC = step.Completion.Continuation
+            machine = legacy_scheduler.PutCurrent(machine, taskIndex, activation)
             continue
         }
         if instruction.Kind == model.InstructionKind.Launch {
             var step model.LaunchStep = legacy_step.PresentLaunch(instruction.Launch)
-            var taskID text = legacy_step.TaskID(activation.TaskID, step.OwnerFunctionID, activation.ID, step.SourceIndex)
-            activation.Slots = legacy_value.Put(activation.Slots, step.HandleSlot, legacy_value.Handle(legacy_step.SlotType(program, step.HandleSlot), taskID))
+            var sourceIndex int = len(activation.LaunchedTaskIDs)
+            var taskID text = activation.TaskID + "/" + [canonical nonnegative decimal text for {sourceIndex}]
+            var crossed legacy_model.ArgumentCrossing = legacy_action.Cross(program, machine, activation.Slots, step.Arguments)
+            machine = crossed.Machine
+            var arguments []legacy_model.Value = crossed.Values
+            activation.Slots = legacy_value.Put(activation.Slots, step.HandleSlot,
+                legacy_value.Handle(legacy_step.SlotType(program, step.HandleSlot), taskID))
             activation.LaunchedTaskIDs = append(activation.LaunchedTaskIDs, taskID)
-            machine = legacy_step.AddEvent(machine, report.EventKind.Launch, step.Location, taskID)
-            var child legacy_model.RunResult = Start(program, step.CalleeFunctionID, taskID, taskID + "/a0",
-                legacy_action.Values(activation.Slots, step.Arguments), machine, transcript, journal)
-            machine = child.Machine
-            machine.Tasks = append(machine.Tasks, legacy_model.TaskState{ID: taskID, SourceIndex: step.SourceIndex, OwnerActivationID: activation.ID,
-                Value: child.Value, Failure: child.Failure, Observed: false})
-            if child.Incomplete {
-                return child
-            }
             activation.PC = step.Continuation
-            continue
+            machine = legacy_step.AddEvent(machine, report.EventKind.Launch, step.Location, taskID)
+            machine = legacy_scheduler.PutCurrent(machine, taskIndex, activation)
+            machine = legacy_scheduler.Register(program, machine, taskID, activation.TaskID, sourceIndex, activation.ID,
+                step.Location, step.CalleeFunctionID, arguments)
+            return legacy_scheduler.Queue(machine, taskIndex)
         }
         if instruction.Kind == model.InstructionKind.Await {
             var step model.AwaitStep = legacy_step.PresentAwait(instruction.Await)
             var taskID text = legacy_value.Slot(activation.Slots, step.HandleSlot).Canonical
-            var taskIndex int = legacy_step.TaskIndex(machine, taskID)
-            machine.Tasks[taskIndex].Observed = true
+            var childIndex int = legacy_scheduler.TaskIndex(machine, taskID)
+            if !legacy_scheduler.Terminal(machine.Tasks[childIndex].Status) {
+                return legacy_scheduler.Block(machine, taskIndex, legacy_model.BlockKind.Await, step.Location, none, taskID)
+            }
+            machine.Tasks[childIndex].Observed = true
             machine = legacy_step.AddEvent(machine, report.EventKind.Await, step.Location, taskID)
-            if machine.Tasks[taskIndex].Failure != none {
-                var failure diagnostic.Diagnostic = legacy_step.Frame(legacy_step.PresentDiagnostic(machine.Tasks[taskIndex].Failure), "await", step.Location)
-                if step.Completion.Mode == model.FailureMode.Capture {
-                    var slotID int = legacy_step.PresentInt(step.Completion.OutcomeSlot)
-                    activation.Slots = legacy_value.Put(activation.Slots, slotID, legacy_value.FailedOutcome(legacy_step.SlotType(program, slotID), failure))
-                    activation.PC = step.Completion.Continuation
+            if machine.Tasks[childIndex].Failure != none {
+                machine = legacy_scheduler.CancelOthers(machine, activation.ID, taskID, activation.TaskID)
+                machine = FailureCompletion(program, machine, taskIndex, activation, step.Completion,
+                    legacy_step.Frame(legacy_step.PresentDiagnostic(machine.Tasks[childIndex].Failure), "await", step.Location))
+                if machine.Tasks[taskIndex].Status == legacy_model.TaskStatus.Running {
                     continue
                 }
-                return Complete(machine, none, failure, false)
+                return machine
             }
             if step.Completion.Mode == model.FailureMode.Capture {
                 var slotID int = legacy_step.PresentInt(step.Completion.OutcomeSlot)
                 activation.Slots = legacy_value.Put(activation.Slots, slotID,
-                    legacy_value.CompletedOutcome(legacy_step.SlotType(program, slotID), machine.Tasks[taskIndex].Value))
+                    legacy_value.CompletedOutcome(legacy_step.SlotType(program, slotID), machine.Tasks[childIndex].Value))
             } else if step.ResultSlot != none {
-                activation.Slots = legacy_value.Put(activation.Slots, legacy_step.PresentInt(step.ResultSlot), legacy_value.PresentValue(machine.Tasks[taskIndex].Value))
+                activation.Slots = legacy_value.Put(activation.Slots, legacy_step.PresentInt(step.ResultSlot),
+                    legacy_value.PresentValue(machine.Tasks[childIndex].Value))
             }
             activation.PC = step.Completion.Continuation
+            machine = legacy_scheduler.PutCurrent(machine, taskIndex, activation)
             continue
         }
         if instruction.Kind == model.InstructionKind.Join {
-            var step model.JoinStep = legacy_step.PresentJoin(instruction.Join)
-            for handleSlot in step.HandleSlots {
-                var taskIndex int = legacy_step.TaskIndex(machine, legacy_value.Slot(activation.Slots, handleSlot).Canonical)
-                machine.Tasks[taskIndex].Observed = true
-                if machine.Tasks[taskIndex].Failure != none {
-                    return Complete(machine, none, legacy_step.Frame(legacy_step.PresentDiagnostic(machine.Tasks[taskIndex].Failure), "implicit-join", step.Location), false)
-                }
+            machine = ExplicitJoin(program, machine, taskIndex, activation, legacy_step.PresentJoin(instruction.Join))
+            if machine.Tasks[taskIndex].Status == legacy_model.TaskStatus.Blocked || legacy_scheduler.Terminal(machine.Tasks[taskIndex].Status) {
+                return machine
             }
-            activation.PC = step.Continuation
             continue
         }
         if instruction.Kind == model.InstructionKind.Channel || instruction.Kind == model.InstructionKind.Send ||
             instruction.Kind == model.InstructionKind.Receive || instruction.Kind == model.InstructionKind.Select {
             var transition legacy_model.Transition = legacy_channel.Advance(program, machine, activation, instruction, journal)
-            machine = transition.Machine
-            activation = transition.Activation
+            machine = legacy_scheduler.PutCurrent(transition.Machine, taskIndex, transition.Activation)
             if transition.Failure != none {
-                return Complete(machine, none, transition.Failure, false)
+                machine = FailFrame(program, machine, taskIndex, legacy_step.PresentDiagnostic(transition.Failure))
+                if machine.Tasks[taskIndex].Status == legacy_model.TaskStatus.Running {
+                    continue
+                }
+                return machine
+            }
+            if transition.Blocked {
+                return legacy_scheduler.Block(machine, taskIndex, transition.BlockKind,
+                    transition.BlockLocation, transition.BlockChannelID, transition.BlockTaskID)
             }
             continue
         }
         if instruction.Kind == model.InstructionKind.Return {
-            var step model.ReturnStep = legacy_step.PresentReturn(instruction.Return)
-            var value legacy_model.Value = legacy_model.Value{TypeID: function.ReturnTypeID, Canonical: "unit", NamedIdentity: none}
-            if step.Value != none {
-                value = legacy_value.Operand(activation.Slots, legacy_step.PresentOperand(step.Value))
+            machine = ImplicitJoin(program, machine, taskIndex, activation, function)
+            if machine.Tasks[taskIndex].Status == legacy_model.TaskStatus.Blocked || legacy_scheduler.Terminal(machine.Tasks[taskIndex].Status) {
+                return machine
             }
-            for taskID in activation.LaunchedTaskIDs {
-                var taskIndex int = legacy_step.TaskIndex(machine, taskID)
-                if !machine.Tasks[taskIndex].Observed && machine.Tasks[taskIndex].Failure != none {
-                    return Complete(machine, none, legacy_step.Frame(legacy_step.PresentDiagnostic(machine.Tasks[taskIndex].Failure), "implicit-join", function.ClosingLocation), false)
-                }
-            }
-            machine = legacy_step.AddEvent(machine, report.EventKind.Return, step.Location, value.Canonical)
-            return Complete(machine, value, none, false)
+            continue
         }
         var step model.StopStep = legacy_step.PresentStop(instruction.Stop)
         var category legacy_model.Value = legacy_value.Operand(activation.Slots, step.Category)
         var detail legacy_model.Value = legacy_value.Operand(activation.Slots, step.Detail)
         machine = legacy_step.AddEvent(machine, report.EventKind.Stop, step.Location, category.Canonical)
-        return Complete(machine, none, legacy_step.Stop(category.Canonical, detail.Canonical, step.Location), false)
-    }
-}
-
-func Start(program model.Program, functionID int, taskID text, activationID text, arguments []legacy_model.Value,
-    machine legacy_model.Machine, transcript []model.LegacyEffectResult, journal []text) legacy_model.RunResult {
-    var function model.Function = legacy_step.Function(program, functionID)
-    var activation legacy_model.Activation = legacy_model.Activation{TaskID: taskID, ID: activationID, FunctionID: functionID,
-        PC: legacy_step.FirstInstruction(function), Slots: []legacy_model.SlotValue{}, EffectCounters: []legacy_model.Counter{}, ChannelCreation: 0,
-        SelectEncounter: 0, LaunchedTaskIDs: []text{}}
-    machine = legacy_step.AddEvent(machine, report.EventKind.Enter, function.EntryLocation, activationID)
-    for index, slotID in function.ParameterSlots {
-        activation.Slots = legacy_value.Put(activation.Slots, slotID, arguments[index])
-        machine = legacy_step.AddEvent(machine, report.EventKind.Bind, legacy_step.SlotLocation(program, slotID), arguments[index].Canonical)
-    }
-    return RunActivation(program, machine, activation, transcript, journal)
-}
-
-func Execute(program model.Program, initialSlots []model.InitialSlot, journal []text,
-    transcript []model.LegacyEffectResult) model.Execution {
-    var invalid diagnostic.Diagnostic? = legacy_validate.Plan(program, initialSlots, journal, transcript)
-    if invalid != none {
-        return model.Execution{Events: []report.Event{}, Diagnostics: []diagnostic.Diagnostic{legacy_step.PresentDiagnostic(invalid)}, RequiredTranscriptEntries: []text{}}
-    }
-    var arguments []legacy_model.Value = []legacy_model.Value{}
-    for slot in initialSlots {
-        arguments = append(arguments, legacy_model.Value{TypeID: slot.TypeID, Canonical: slot.Canonical, NamedIdentity: slot.NamedIdentity})
-    }
-    var machine legacy_model.Machine = legacy_model.Machine{Events: []report.Event{}, RequiredTranscriptEntries: []text{}, UsedTranscriptIDs: []text{},
-        Tasks: []legacy_model.TaskState{}, Channels: []legacy_model.ChannelState{},
-        ActivationCounters: []legacy_model.Counter{legacy_model.Counter{Key: "root", Next: 1}}, JournalIndex: 0}
-    var result legacy_model.RunResult = Start(program, program.EntryFunctionID, "root", "root/a0", arguments, machine, transcript, journal)
-    if result.Incomplete {
-        return model.Execution{Events: result.Machine.Events, Diagnostics: []diagnostic.Diagnostic{}, RequiredTranscriptEntries: result.Machine.RequiredTranscriptEntries}
-    }
-    if result.Failure != none {
-        return model.Execution{Events: result.Machine.Events, Diagnostics: []diagnostic.Diagnostic{legacy_step.PresentDiagnostic(result.Failure)}, RequiredTranscriptEntries: []text{}}
-    }
-    for item in transcript {
-        if !legacy_step.HasText(result.Machine.UsedTranscriptIDs, item.OperationID) {
-            var failure diagnostic.Diagnostic = diagnostic.New("UNUSED_TRANSCRIPT_ENTRY", "runtime", "target:1:1", item.OperationID)
-            return model.Execution{Events: result.Machine.Events, Diagnostics: []diagnostic.Diagnostic{failure}, RequiredTranscriptEntries: []text{}}
+        machine = legacy_scheduler.PutCurrent(machine, taskIndex, activation)
+        machine = FailFrame(program, machine, taskIndex, legacy_step.Stop(category.Canonical, detail.Canonical, step.Location))
+        if machine.Tasks[taskIndex].Status != legacy_model.TaskStatus.Running {
+            return machine
         }
     }
-    return model.Execution{Events: result.Machine.Events, Diagnostics: []diagnostic.Diagnostic{}, RequiredTranscriptEntries: []text{}}
 }
