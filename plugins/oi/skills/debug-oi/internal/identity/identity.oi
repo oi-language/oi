@@ -76,6 +76,10 @@ func CanonicalAuthorities(values []text) bool {
 }
 
 func OperationOrderValid(values []execution.Operation) bool {
-    return [true exactly when {values} follows frozen 0.0.2 journal order, every first stable operation identity is canonical and contiguous for its activation and kind, repeated identities are adjacent,
-        each Started is followed by exactly one Completed, Failed, or Indeterminate state of the same kind and location, and no terminal state has a later transition]
+    return [true exactly when {values} follows frozen 0.0.2 causal journal order; TaskLaunch, ChannelCreate, MessageCommit, and Select use their direct canonical identities,
+        while TaskCompletion and DetachNotification use newly allocated owner or registry activation oN identities, and every other first identity obeys its canonical rule;
+        each allocated identity has exactly one leading Allocation Completed record followed by one fixed non-Allocation kind, whose Started and terminal transitions preserve location and inputs despite interleaving;
+        every Started reaches exactly one later Completed, Failed, Indeterminate, or Cancelled terminal; Indeterminate is only an external Effect,
+        Cancelled is only an already-Started Effect's host-controlled cancellation acknowledgement on that ID or a cancellable task, detach, or lifecycle boundary;
+        ordinary Effect failure is Failed, and no terminal state has a later transition]
 }

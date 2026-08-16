@@ -1,0 +1,18 @@
+package process
+
+type Command struct {
+    Program text
+    Arguments []text
+    WorkingDirectory text?
+}
+
+type Result struct {
+    ExitCode int
+    Output text
+    ErrorOutput text
+}
+
+effect Run(command Command) Result {
+    uses process.run
+    contract [run {command.Program} with exact {command.Arguments} in {command.WorkingDirectory} and return its completed result]
+}

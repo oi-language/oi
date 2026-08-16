@@ -1,0 +1,85 @@
+package collections
+
+import "std/execution"
+import "oi/corpus/0.0.2/suite/catalog"
+import "oi/corpus/0.0.2/suite/model"
+import "oi/corpus/0.0.2/suite/runtime/legacy"
+
+func Failed(id text, target text, category text) model.Case {
+    return catalog.RuntimeCase(
+        id,
+        target,
+        model.Status.RuntimeFail,
+        category,
+        none,
+        catalog.Receipt(execution.TerminalStatus.Failed, category, []model.OperationExpectation{}),
+    )
+}
+
+func CaptureFallback() model.Case {
+    operations := legacy.Terminate(execution.OperationKind.Effect, execution.OperationStatus.Failed, "main.oi:14:24")
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Reply, "main.oi:23:5"))
+    reply := catalog.Reply("text", "e1c6346a9b2a0009eb885752777b47bd69cb09b2c63c29f0bd6470430786fd5a", "cached-7")
+    return legacy.Pass("capture-fallback", reply, operations)
+}
+
+func ChannelCommand() model.Case {
+    operations := legacy.Atomic(execution.OperationKind.ChannelCreate, "main.oi:24:17")
+    operations = legacy.Append(operations, legacy.Atomic(execution.OperationKind.TaskLaunch, "main.oi:25:15"))
+    operations = legacy.Append(operations, legacy.Begin(execution.OperationKind.Receive, "main.oi:9:16"))
+    operations = legacy.Append(operations, legacy.Begin(execution.OperationKind.Send, "main.oi:26:5"))
+    operations = legacy.Append(operations, legacy.Atomic(execution.OperationKind.MessageCommit, "main.oi:26:5"))
+    operations = legacy.Append(operations, legacy.End(execution.OperationKind.Send, execution.OperationStatus.Completed, "main.oi:26:5"))
+    operations = legacy.Append(operations, legacy.End(execution.OperationKind.Receive, execution.OperationStatus.Completed, "main.oi:9:16"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.TaskCompletion, "main.oi:12:12"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Await, "main.oi:27:11"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Reply, "main.oi:27:5"))
+    reply := catalog.Reply("text", "554e2e73fbe0563026bae365524673143197a58329516310c30460b534a807dc", "stopped")
+    return legacy.Pass("channel-command", reply, operations)
+}
+
+func ChannelDeadlock() model.Case {
+    operations := legacy.Atomic(execution.OperationKind.ChannelCreate, "main.oi:9:13")
+    operations = legacy.Append(operations, legacy.Atomic(execution.OperationKind.TaskLaunch, "main.oi:10:15"))
+    operations = legacy.Append(operations, legacy.Begin(execution.OperationKind.Send, "main.oi:4:5"))
+    operations = legacy.Append(operations, legacy.Atomic(execution.OperationKind.MessageCommit, "main.oi:4:5"))
+    operations = legacy.Append(operations, legacy.End(execution.OperationKind.Send, execution.OperationStatus.Completed, "main.oi:4:5"))
+    operations = legacy.Append(operations, legacy.Begin(execution.OperationKind.Send, "main.oi:5:5"))
+    operations = legacy.Append(operations, legacy.Begin(execution.OperationKind.Await, "main.oi:11:5"))
+    operations = legacy.Append(operations, legacy.End(execution.OperationKind.Send, execution.OperationStatus.Failed, "main.oi:5:5"))
+    operations = legacy.Append(operations, legacy.Terminate(execution.OperationKind.TaskCompletion, execution.OperationStatus.Failed, "main.oi:5:5"))
+    operations = legacy.Append(operations, legacy.End(execution.OperationKind.Await, execution.OperationStatus.Failed, "main.oi:11:5"))
+    return legacy.Failure("channel-deadlock", "DEADLOCK", operations)
+}
+
+func ChannelProgress() model.Case {
+    operations := legacy.Atomic(execution.OperationKind.ChannelCreate, "main.oi:23:16")
+    operations = legacy.Append(operations, legacy.Atomic(execution.OperationKind.TaskLaunch, "main.oi:24:15"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Judgment, "main.oi:25:24"))
+    operations = legacy.Append(operations, legacy.Begin(execution.OperationKind.Send, "main.oi:13:5"))
+    operations = legacy.Append(operations, legacy.Atomic(execution.OperationKind.MessageCommit, "main.oi:13:5"))
+    operations = legacy.Append(operations, legacy.End(execution.OperationKind.Send, execution.OperationStatus.Completed, "main.oi:13:5"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Receive, "main.oi:29:24"))
+    operations = legacy.Append(operations, legacy.Atomic(execution.OperationKind.Select, "main.oi:28:9"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Judgment, "main.oi:14:12"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.TaskCompletion, "main.oi:14:12"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Await, "main.oi:31:24"))
+    operations = legacy.Append(operations, legacy.Atomic(execution.OperationKind.Select, "main.oi:28:9"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Judgment, "main.oi:9:12"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Reply, "main.oi:32:13"))
+    reply := catalog.Reply("text", "3cf5521f7d8f9ebb1887de7a87627bfc75d94e8f60c2674dd271f35bbe2bd861", "combined-7")
+    return legacy.Pass("channel-progress", reply, operations)
+}
+
+func Cases() []model.Case {
+    return []model.Case{
+        catalog.CompileCase("collections", "corpus/valid/collections", model.Status.Pass, "none"),
+        Failed("missing-map-key", "corpus/runtime/missing-map-key", "MISSING_KEY"),
+        Failed("duplicate-map-key", "corpus/runtime/duplicate-map-key", "DUPLICATE_KEY"),
+        Failed("duplicate-set-element", "corpus/runtime/duplicate-set-element", "DUPLICATE_KEY"),
+        CaptureFallback(),
+        ChannelCommand(),
+        ChannelDeadlock(),
+        ChannelProgress(),
+    }
+}

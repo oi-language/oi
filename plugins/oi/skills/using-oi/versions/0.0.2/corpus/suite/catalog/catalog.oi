@@ -1,87 +1,129 @@
 package catalog
 
-type Phase enum {
-    Compile
-    Runtime
-}
+import "std/execution"
+import "oi/corpus/0.0.2/suite/model"
 
-type Status enum {
-    Pass
-    StaticFail
-    RuntimeFail
-}
-
-type ReplyIdentity struct {
-    Type text
-    Digest text
-    Value text
-}
-
-type Case struct {
-    ID text
-    Target text
-    Phase Phase
-    Status Status
-    Category text
-    Reply ReplyIdentity?
-}
-
-func CompileCase(id text, target text, status Status, category text) Case {
-    return Case{
+func CompileCase(id text, target text, status model.Status, category text) model.Case {
+    return model.Case{
         ID: id,
         Target: target,
-        Phase: Phase.Compile,
+        Phase: model.Phase.Compile,
         Status: status,
         Category: category,
         Reply: none,
+        Receipt: none,
     }
 }
 
-func RuntimeCase(id text, target text, category text) Case {
-    return Case{
+func Operation(
+    kind execution.OperationKind,
+    status execution.OperationStatus,
+    location text,
+) model.OperationExpectation {
+    return model.OperationExpectation{
+        Kind: kind,
+        Status: status,
+        Location: location,
+    }
+}
+
+func Reply(typeName text, digest text, value text) model.ReplyIdentity {
+    return model.ReplyIdentity{
+        Type: typeName,
+        Digest: digest,
+        Value: value,
+    }
+}
+
+func Receipt(
+    terminal execution.TerminalStatus,
+    failureCategory text?,
+    operations []model.OperationExpectation,
+) model.ReceiptExpectation {
+    return model.ReceiptExpectation{
+        Terminal: terminal,
+        FailureCategory: failureCategory,
+        Operations: operations,
+    }
+}
+
+func RuntimeCase(
+    id text,
+    target text,
+    status model.Status,
+    category text,
+    reply model.ReplyIdentity?,
+    receipt model.ReceiptExpectation,
+) model.Case {
+    return model.Case{
         ID: id,
         Target: target,
-        Phase: Phase.Runtime,
-        Status: Status.RuntimeFail,
+        Phase: model.Phase.Runtime,
+        Status: status,
         Category: category,
-        Reply: none,
+        Reply: reply,
+        Receipt: receipt,
     }
 }
 
-func Cases() []Case {
-    return []Case{
-        CompileCase("manifest", "valid/manifest", Status.Pass, "none"),
-        CompileCase("collections", "valid/collections", Status.Pass, "none"),
-        CompileCase("derive", "valid/derive", Status.Pass, "none"),
-        CompileCase(
-            "missing-source-manifest",
-            "invalid/missing-source-manifest",
-            Status.StaticFail,
-            "MISSING_SOURCE_MANIFEST",
-        ),
-        CompileCase(
-            "unsorted-source-manifest",
-            "invalid/unsorted-source-manifest",
-            Status.StaticFail,
-            "SOURCE_MANIFEST_ORDER",
-        ),
-        CompileCase(
-            "unbounded-semantic-result",
-            "invalid/unbounded-semantic-result",
-            Status.StaticFail,
-            "UNBOUNDED_SEMANTIC_RESULT",
-        ),
-        RuntimeCase("missing-map-key", "runtime/missing-map-key", "MISSING_KEY"),
-        RuntimeCase("duplicate-map-key", "runtime/duplicate-map-key", "DUPLICATE_KEY"),
-        RuntimeCase(
-            "duplicate-set-element",
-            "runtime/duplicate-set-element",
-            "DUPLICATE_KEY",
-        ),
-        RuntimeCase(
-            "nondeterministic-derivation",
-            "runtime/nondeterministic-derivation",
-            "NONDETERMINISTIC_DERIVATION",
-        ),
+func CompileCases() []model.Case {
+    return []model.Case{
+        CompileCase("types", "corpus/valid/types", model.Status.Pass, "none"),
+        CompileCase("semantic", "corpus/valid/semantic", model.Status.Pass, "none"),
+        CompileCase("import", "corpus/valid/import", model.Status.Pass, "none"),
+        CompileCase("entry-effect", "corpus/valid/entry-effect", model.Status.Pass, "none"),
+        CompileCase("core-standard", "corpus/valid/core-standard", model.Status.Pass, "none"),
+        CompileCase("control", "corpus/valid/control", model.Status.Pass, "none"),
+        CompileCase("oi-effect", "corpus/invalid/oi-effect", model.Status.StaticFail, "OI_EFFECT_FORBIDDEN"),
+        CompileCase("oi-anonymous", "corpus/invalid/oi-anonymous", model.Status.StaticFail, "OI_REQUIRES_NAMED_FUNCTION"),
+        CompileCase("nested-semantic", "corpus/invalid/nested-semantic", model.Status.StaticFail, "NESTED_SEMANTIC_EXPRESSION"),
+        CompileCase("implicit-named-conversion", "corpus/invalid/implicit-named-conversion", model.Status.StaticFail, "IMPLICIT_NAMED_CONVERSION"),
+        CompileCase("imperative-semantic", "corpus/invalid/imperative-semantic", model.Status.StaticFail, "IMPERATIVE_SEMANTIC_BLOCK"),
+        CompileCase("detach-endpoint", "corpus/invalid/detach-endpoint", model.Status.StaticFail, "ENDPOINT_SCOPE_ESCAPE"),
+        CompileCase("handoff-endpoint", "corpus/invalid/handoff-endpoint", model.Status.StaticFail, "ENDPOINT_SCOPE_ESCAPE"),
+        CompileCase("channel-handle-payload", "corpus/invalid/channel-handle-payload", model.Status.StaticFail, "RUNTIME_HANDLE_PAYLOAD"),
+        CompileCase("multiple-receivers", "corpus/invalid/multiple-receivers", model.Status.StaticFail, "RECEIVER_ALREADY_MOVED"),
+        CompileCase("channel-zero", "corpus/invalid/channel-zero", model.Status.StaticFail, "INVALID_CHANNEL_CAPACITY"),
+        CompileCase("entry-return-value", "corpus/invalid/entry-return-value", model.Status.StaticFail, "ENTRY_RETURN_VALUE"),
+        CompileCase("missing-semantic-type", "corpus/invalid/missing-semantic-type", model.Status.StaticFail, "MISSING_SEMANTIC_TYPE"),
+        CompileCase("entry-result", "corpus/invalid/entry-result", model.Status.StaticFail, "ENTRY_RESULT_FORBIDDEN"),
+        CompileCase("entry-call", "corpus/invalid/entry-call", model.Status.StaticFail, "ENTRY_NOT_CALLABLE"),
+        CompileCase("missing-entry", "corpus/invalid/missing-entry", model.Status.StaticFail, "MISSING_ENTRY"),
+        CompileCase("hidden-optional-effect", "corpus/invalid/hidden-optional-effect", model.Status.StaticFail, "UNMAPPED_EFFECT"),
     }
+}
+
+func HelloCase() model.Case {
+    operations := []model.OperationExpectation{
+        Operation(execution.OperationKind.Allocation, execution.OperationStatus.Completed, "main.oi:4:20"),
+        Operation(execution.OperationKind.Judgment, execution.OperationStatus.Started, "main.oi:4:20"),
+        Operation(execution.OperationKind.Judgment, execution.OperationStatus.Completed, "main.oi:4:20"),
+        Operation(execution.OperationKind.Allocation, execution.OperationStatus.Completed, "main.oi:13:5"),
+        Operation(execution.OperationKind.Reply, execution.OperationStatus.Started, "main.oi:13:5"),
+        Operation(execution.OperationKind.Reply, execution.OperationStatus.Completed, "main.oi:13:5"),
+    }
+    reply := Reply(
+        "main.Greeting",
+        "d9383c2cbeb28641ae48bc1fa61bd78704faa387491411bb7f457c4fd7e62d60",
+        "Greeting(\"Hello, Oi!\")",
+    )
+    return RuntimeCase(
+        "hello-world",
+        "examples/hello-world",
+        model.Status.Pass,
+        "none",
+        reply,
+        Receipt(execution.TerminalStatus.Completed, none, operations),
+    )
+}
+
+func Cases(
+    runtimeCases []model.Case,
+) []model.Case {
+    cases := CompileCases()
+    cases = append(cases, HelloCase())
+    for item in runtimeCases {
+        cases = append(cases, item)
+    }
+    return cases
 }

@@ -1,0 +1,242 @@
+package legacy
+
+import "std/execution"
+import "oi/corpus/0.0.2/suite/catalog"
+import "oi/corpus/0.0.2/suite/model"
+
+func Append(target []model.OperationExpectation, source []model.OperationExpectation) []model.OperationExpectation {
+    for item in source {
+        target = append(target, item)
+    }
+    return target
+}
+
+func Atomic(kind execution.OperationKind, location text) []model.OperationExpectation {
+    return []model.OperationExpectation{
+        catalog.Operation(kind, execution.OperationStatus.Completed, location),
+    }
+}
+
+func Begin(kind execution.OperationKind, location text) []model.OperationExpectation {
+    return []model.OperationExpectation{
+        catalog.Operation(execution.OperationKind.Allocation, execution.OperationStatus.Completed, location),
+        catalog.Operation(kind, execution.OperationStatus.Started, location),
+    }
+}
+
+func End(
+    kind execution.OperationKind,
+    status execution.OperationStatus,
+    location text,
+) []model.OperationExpectation {
+    return []model.OperationExpectation{catalog.Operation(kind, status, location)}
+}
+
+func Complete(kind execution.OperationKind, location text) []model.OperationExpectation {
+    operations := Begin(kind, location)
+    return Append(operations, End(kind, execution.OperationStatus.Completed, location))
+}
+
+func Terminate(
+    kind execution.OperationKind,
+    status execution.OperationStatus,
+    location text,
+) []model.OperationExpectation {
+    operations := Begin(kind, location)
+    return Append(operations, End(kind, status, location))
+}
+
+func Pass(
+    id text,
+    reply model.ReplyIdentity?,
+    operations []model.OperationExpectation,
+) model.Case {
+    return catalog.RuntimeCase(
+        id,
+        "corpus/runtime/" + id,
+        model.Status.Pass,
+        "none",
+        reply,
+        catalog.Receipt(execution.TerminalStatus.Completed, none, operations),
+    )
+}
+
+func Failure(
+    id text,
+    category text,
+    operations []model.OperationExpectation,
+) model.Case {
+    return catalog.RuntimeCase(
+        id,
+        "corpus/runtime/" + id,
+        model.Status.RuntimeFail,
+        category,
+        none,
+        catalog.Receipt(execution.TerminalStatus.Failed, category, operations),
+    )
+}
+
+func Handoff() model.Case {
+    operations := Atomic(execution.OperationKind.TaskLaunch, "main.oi:17:5")
+    operations = Append(operations, Complete(execution.OperationKind.Judgment, "main.oi:4:12"))
+    operations = Append(operations, Complete(execution.OperationKind.TaskCompletion, "main.oi:4:12"))
+    operations = Append(operations, Complete(execution.OperationKind.Join, "main.oi:18:5"))
+    operations = Append(operations, Complete(execution.OperationKind.Handoff, "main.oi:18:5"))
+    operations = Append(operations, Complete(execution.OperationKind.Judgment, "main.oi:13:11"))
+    operations = Append(operations, Complete(execution.OperationKind.Reply, "main.oi:13:5"))
+    reply := catalog.Reply("text", "48d31d8eab2420fd0e003253bc66e1e56be7e91131a219492d6713dcd82a6f3b", "continued after value-7")
+    return Pass("handoff", reply, operations)
+}
+
+func IndeterminateEffect() model.Case {
+    operations := Terminate(execution.OperationKind.Effect, execution.OperationStatus.Indeterminate, "main.oi:9:5")
+    return Failure("indeterminate-effect", "INDETERMINATE_EFFECT", operations)
+}
+
+func OiContinue() model.Case {
+    operations := Atomic(execution.OperationKind.TaskLaunch, "main.oi:17:15")
+    operations = Append(operations, Complete(execution.OperationKind.Judgment, "main.oi:18:24"))
+    operations = Append(operations, Complete(execution.OperationKind.Judgment, "main.oi:8:12"))
+    operations = Append(operations, Complete(execution.OperationKind.TaskCompletion, "main.oi:8:12"))
+    operations = Append(operations, Complete(execution.OperationKind.Await, "main.oi:19:15"))
+    operations = Append(operations, Complete(execution.OperationKind.Judgment, "main.oi:4:12"))
+    operations = Append(operations, Complete(execution.OperationKind.Reply, "main.oi:20:5"))
+    reply := catalog.Reply("text", "3cf5521f7d8f9ebb1887de7a87627bfc75d94e8f60c2674dd271f35bbe2bd861", "combined-7")
+    return Pass("oi-continue", reply, operations)
+}
+
+func OiDiscard() model.Case {
+    operations := Atomic(execution.OperationKind.TaskLaunch, "main.oi:19:5")
+    operations = Append(operations, Complete(execution.OperationKind.Effect, "main.oi:20:5"))
+    operations = Append(operations, Complete(execution.OperationKind.Effect, "main.oi:14:5"))
+    operations = Append(operations, Complete(execution.OperationKind.Judgment, "main.oi:15:12"))
+    operations = Append(operations, Complete(execution.OperationKind.TaskCompletion, "main.oi:15:12"))
+    operations = Append(operations, Complete(execution.OperationKind.Join, "main.oi:21:1"))
+    return Pass("oi-discard", none, operations)
+}
+
+func ResumeNoRepeat() model.Case {
+    operations := Atomic(execution.OperationKind.ChannelCreate, "main.oi:20:16")
+    operations = Append(operations, Atomic(execution.OperationKind.TaskLaunch, "main.oi:21:14"))
+    operations = Append(operations, Begin(execution.OperationKind.Receive, "main.oi:22:18"))
+    operations = Append(operations, Complete(execution.OperationKind.Judgment, "main.oi:4:23"))
+    operations = Append(operations, Begin(execution.OperationKind.Send, "main.oi:5:5"))
+    operations = Append(operations, Atomic(execution.OperationKind.MessageCommit, "main.oi:5:5"))
+    operations = Append(operations, End(execution.OperationKind.Send, execution.OperationStatus.Completed, "main.oi:5:5"))
+    operations = Append(operations, End(execution.OperationKind.Receive, execution.OperationStatus.Completed, "main.oi:22:18"))
+    operations = Append(operations, Complete(execution.OperationKind.TaskCompletion, "main.oi:6:12"))
+    operations = Append(operations, Complete(execution.OperationKind.Await, "main.oi:23:18"))
+    operations = Append(operations, Complete(execution.OperationKind.Effect, "main.oi:24:17"))
+    operations = Append(operations, Complete(execution.OperationKind.Judgment, "main.oi:25:11"))
+    operations = Append(operations, Complete(execution.OperationKind.Reply, "main.oi:25:5"))
+    reply := catalog.Reply("text", "b2220ede9cf5568d4d751aa9fa9f2c61fe9afda2fefbe2187e88b7b659ba7cdc", "approved observed")
+    return Pass("resume-no-repeat", reply, operations)
+}
+
+func ResumeVersionMismatch() model.Case {
+    return Failure("resume-version-mismatch", "RESUME_VERSION_MISMATCH", []model.OperationExpectation{})
+}
+
+func SelectReplay() model.Case {
+    operations := Atomic(execution.OperationKind.ChannelCreate, "main.oi:9:14")
+    operations = Append(operations, Atomic(execution.OperationKind.ChannelCreate, "main.oi:10:15"))
+    operations = Append(operations, Begin(execution.OperationKind.Send, "main.oi:11:5"))
+    operations = Append(operations, Atomic(execution.OperationKind.MessageCommit, "main.oi:11:5"))
+    operations = Append(operations, End(execution.OperationKind.Send, execution.OperationStatus.Completed, "main.oi:11:5"))
+    operations = Append(operations, Begin(execution.OperationKind.Send, "main.oi:12:5"))
+    operations = Append(operations, Atomic(execution.OperationKind.MessageCommit, "main.oi:12:5"))
+    operations = Append(operations, End(execution.OperationKind.Send, execution.OperationStatus.Completed, "main.oi:12:5"))
+    operations = Append(operations, Complete(execution.OperationKind.Receive, "main.oi:17:19"))
+    operations = Append(operations, Atomic(execution.OperationKind.Select, "main.oi:14:5"))
+    operations = Append(operations, Complete(execution.OperationKind.Reply, "main.oi:20:5"))
+    reply := catalog.Reply("text", "fff596f779c015d6a3c7627a5773f7f13f72e112722c32c315820114dcfb8720", "second-7")
+    return Pass("select-replay", reply, operations)
+}
+
+func SelectSendDefault() model.Case {
+    operations := Atomic(execution.OperationKind.ChannelCreate, "main.oi:14:17")
+    operations = Append(operations, Atomic(execution.OperationKind.ChannelCreate, "main.oi:15:25"))
+    operations = Append(operations, Atomic(execution.OperationKind.Select, "main.oi:17:5"))
+    operations = Append(operations, Atomic(execution.OperationKind.TaskLaunch, "main.oi:23:15"))
+    operations = Append(operations, Begin(execution.OperationKind.Send, "main.oi:25:10"))
+    operations = Append(operations, Atomic(execution.OperationKind.MessageCommit, "main.oi:25:10"))
+    operations = Append(operations, End(execution.OperationKind.Send, execution.OperationStatus.Completed, "main.oi:25:10"))
+    operations = Append(operations, Atomic(execution.OperationKind.Select, "main.oi:24:5"))
+    operations = Append(operations, Complete(execution.OperationKind.Receive, "main.oi:4:14"))
+    operations = Append(operations, Begin(execution.OperationKind.Send, "main.oi:5:5"))
+    operations = Append(operations, Atomic(execution.OperationKind.MessageCommit, "main.oi:5:5"))
+    operations = Append(operations, End(execution.OperationKind.Send, execution.OperationStatus.Completed, "main.oi:5:5"))
+    operations = Append(operations, Complete(execution.OperationKind.TaskCompletion, "main.oi:6:1"))
+    operations = Append(operations, Complete(execution.OperationKind.Receive, "main.oi:28:5"))
+    operations = Append(operations, Complete(execution.OperationKind.Await, "main.oi:29:5"))
+    operations = Append(operations, Complete(execution.OperationKind.Reply, "main.oi:30:5"))
+    reply := catalog.Reply("[]text", "566b92e6dd33129863653e35f391f54467ffdb1b5ac3aeddd62a9f299b45ecb5", "[]text{\"default\", \"sent\"}")
+    return Pass("select-send-default", reply, operations)
+}
+
+func TaskPolicy() model.Case {
+    operations := Atomic(execution.OperationKind.TaskLaunch, "main.oi:9:11")
+    operations = Append(operations, Begin(execution.OperationKind.Await, "main.oi:9:5"))
+    operations = Append(operations, Atomic(execution.OperationKind.TaskLaunch, "main.oi:4:14"))
+    operations = Append(operations, Begin(execution.OperationKind.Await, "main.oi:5:5"))
+    operations = Append(operations, Terminate(execution.OperationKind.TaskCompletion, execution.OperationStatus.Failed, "main.oi:4:14"))
+    operations = Append(operations, End(execution.OperationKind.Await, execution.OperationStatus.Failed, "main.oi:5:5"))
+    operations = Append(operations, Terminate(execution.OperationKind.TaskCompletion, execution.OperationStatus.Failed, "main.oi:4:14"))
+    operations = Append(operations, End(execution.OperationKind.Await, execution.OperationStatus.Failed, "main.oi:9:5"))
+    return Failure("task-policy", "TASK_DEPTH_LIMIT", operations)
+}
+
+func TaskStatusCancel() model.Case {
+    operations := Atomic(execution.OperationKind.TaskLaunch, "main.oi:21:15")
+    operations = Append(operations, Begin(execution.OperationKind.Effect, "main.oi:6:13"))
+    operations = Append(operations, Complete(execution.OperationKind.TaskStatus, "main.oi:22:15"))
+    operations = Append(operations, Begin(execution.OperationKind.TaskCancel, "main.oi:23:5"))
+    operations = Append(operations, End(execution.OperationKind.Effect, execution.OperationStatus.Cancelled, "main.oi:6:13"))
+    operations = Append(operations, Terminate(execution.OperationKind.TaskCompletion, execution.OperationStatus.Cancelled, "main.oi:21:15"))
+    operations = Append(operations, End(execution.OperationKind.TaskCancel, execution.OperationStatus.Completed, "main.oi:23:5"))
+    operations = Append(operations, Complete(execution.OperationKind.TaskStatus, "main.oi:24:14"))
+    operations = Append(operations, Complete(execution.OperationKind.Reply, "main.oi:25:5"))
+    reply := catalog.Reply("[]task.State", "eaf120086075ac527a7b70b27a4b2a25668fc0ab805c1a5467eed98d6525192e", "[]task.State{task.State.Running, task.State.Cancelled}")
+    return Pass("task-status-cancel", reply, operations)
+}
+
+func TypeContract() model.Case {
+    operations := Terminate(execution.OperationKind.Judgment, execution.OperationStatus.Failed, "main.oi:3:19")
+    return Failure("type-contract", "TYPE_CONTRACT_MISMATCH", operations)
+}
+
+func UserSuspension() model.Case {
+    operations := Atomic(execution.OperationKind.TaskLaunch, "main.oi:19:16")
+    operations = Append(operations, Begin(execution.OperationKind.Effect, "main.oi:6:12"))
+    operations = Append(operations, Begin(execution.OperationKind.UserSuspension, "main.oi:6:12"))
+    operations = Append(operations, Atomic(execution.OperationKind.TaskLaunch, "main.oi:20:18"))
+    operations = Append(operations, Complete(execution.OperationKind.Judgment, "main.oi:10:12"))
+    operations = Append(operations, Complete(execution.OperationKind.TaskCompletion, "main.oi:10:12"))
+    operations = Append(operations, Complete(execution.OperationKind.Await, "main.oi:21:14"))
+    operations = Append(operations, Begin(execution.OperationKind.Await, "main.oi:22:15"))
+    operations = Append(operations, End(execution.OperationKind.UserSuspension, execution.OperationStatus.Completed, "main.oi:6:12"))
+    operations = Append(operations, End(execution.OperationKind.Effect, execution.OperationStatus.Completed, "main.oi:6:12"))
+    operations = Append(operations, Complete(execution.OperationKind.TaskCompletion, "main.oi:6:5"))
+    operations = Append(operations, End(execution.OperationKind.Await, execution.OperationStatus.Completed, "main.oi:22:15"))
+    operations = Append(operations, Complete(execution.OperationKind.Judgment, "main.oi:23:11"))
+    operations = Append(operations, Complete(execution.OperationKind.Reply, "main.oi:23:5"))
+    reply := catalog.Reply("text", "b15119e174aa0e50224008efaf244e2233122825d225a3ecc3f9a69d6984aa8d", "answer approved after probe-complete")
+    return Pass("user-suspension", reply, operations)
+}
+
+func Cases() []model.Case {
+    return []model.Case{
+        Handoff(),
+        IndeterminateEffect(),
+        OiContinue(),
+        OiDiscard(),
+        ResumeNoRepeat(),
+        ResumeVersionMismatch(),
+        SelectReplay(),
+        SelectSendDefault(),
+        TaskPolicy(),
+        TaskStatusCancel(),
+        TypeContract(),
+        UserSuspension(),
+    }
+}

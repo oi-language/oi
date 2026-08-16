@@ -22,13 +22,13 @@ Sequence is contiguous from zero. State is `Started | Completed | Failed | Indet
 
 Each ActivationID has an operation counter from zero. In deterministic statement/operand encounter order, a boundary without a canonical ID gets `<ActivationID>/o<N>`: before `Started`, append completed allocation with its location/digest/ID, then increment. Loops allocate per encounter.
 
-TaskLaunch, ChannelCreate, MessageCommit, and SelectRecord create their canonical TaskID/ChannelID/MessageID/SelectID atomically as OperationID, with no prior allocation. Later events reuse it. A blocked send/receive without MessageID keeps its `oN`; later message commit has MessageID. Other boundaries reuse a persisted ID or allocate `oN`. Semantic, derive, effect, await, join, detach, handoff, and Reply use `oN`.
+TaskLaunch, ChannelCreate, MessageCommit, and SelectRecord use TaskID/ChannelID/MessageID/SelectID directly, without allocation. Only own states reuse a direct ID. Allocated `oN` starts with one Allocation, then uses one fixed boundary Kind. TaskCompletion and DetachNotification allocate owner/registry `oN`, record Started then one terminal, and carry TaskID in input/result. A blocked send/receive without a persisted ID uses `oN`; its MessageCommit uses MessageID. Every other boundary owns a persisted ID or allocates `oN`.
 
 One operation's states share its ID. Block/wake/re-observe allocates nothing. Replay reuses IDs, restores counters after greatest N, and never advances direct-ID boundaries. Handles serialize only canonical IDs, never objects, context, conversation, locals, trace, tool output, memory, buffers, authority tokens, or host bindings.
 
 ## Checkpoints and terminal states
 
-Checkpoint every semantic/derive; effect start/terminal; task launch/completion/await/join; detach transfer/notification/status/cancel; channel create/send/receive/select; user suspension; handoff; and Reply. After `oN` allocation and before nondeterministic/visible work append `Started`; atomic identity creation is already completed. Append exactly one terminal `Completed`, `Failed`, `Indeterminate`, or `Cancelled` before its outcome is visible. Records never change. Receipt terminal fields follow checkpoints without allocating an operation.
+Checkpoint every semantic/derive; effect start/terminal; task launch/completion/await/join; detach transfer/notification/status/cancel; channel create/send/receive/select; user suspension; handoff; and Reply. After `oN` allocation and before nondeterministic/visible work append `Started`; atomic identity creation is already completed. Append exactly one terminal `Completed`, `Failed`, `Indeterminate`, or `Cancelled` before its outcome is visible. Records never change. Root entry completion is only the receipt terminal; it allocates no operation.
 
 `Completed` includes a full protected typed result and public type/digest projection. `Failed` contains exact failure. `Indeterminate` applies only when a trustworthy outcome cannot be established. `Cancelled` is explicit cancellation. Known failures never become indeterminate; none is completed without a full typed boundary value.
 

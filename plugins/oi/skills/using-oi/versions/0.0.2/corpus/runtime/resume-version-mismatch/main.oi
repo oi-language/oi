@@ -1,0 +1,11 @@
+package main
+
+effect Reply(value text) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main(value text) {
+    var result text = [checkpoint source value {value}]
+    Reply(result)
+}

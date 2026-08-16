@@ -1,0 +1,7 @@
+package main
+
+func Invoke() unit {
+    main()
+}
+
+func main() {}

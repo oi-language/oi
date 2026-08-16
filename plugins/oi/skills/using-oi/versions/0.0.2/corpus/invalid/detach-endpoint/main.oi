@@ -1,0 +1,10 @@
+package main
+
+func Worker(output sender[text]) unit {
+    send(output, "detached")
+}
+
+func main() {
+    link := channel[text](1)
+    detach oi Worker(link.Send)
+}

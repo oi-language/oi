@@ -1,0 +1,123 @@
+package derivation
+
+import "std/execution"
+import "oi/corpus/0.0.2/suite/catalog"
+import "oi/corpus/0.0.2/suite/model"
+import "oi/corpus/0.0.2/suite/runtime/legacy"
+
+func RepeatComplete(
+    operations []model.OperationExpectation,
+    kind execution.OperationKind,
+    location text,
+    count int,
+) []model.OperationExpectation {
+    index := 0
+    for index < count {
+        operations = legacy.Append(operations, legacy.Complete(kind, location))
+        index = index + 1
+    }
+    return operations
+}
+
+func AuthorityIntersection() model.Case {
+    operations := legacy.Atomic(execution.OperationKind.TaskLaunch, "main.oi:18:15")
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Effect, "main.oi:8:24"))
+    operations = legacy.Append(operations, legacy.Terminate(execution.OperationKind.Effect, execution.OperationStatus.Failed, "main.oi:9:24"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.TaskCompletion, "main.oi:13:16"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Await, "main.oi:19:18"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Effect, "main.oi:19:5"))
+    return legacy.Pass("authority-intersection", none, operations)
+}
+
+func AwaitImmediate() model.Case {
+    operations := legacy.Atomic(execution.OperationKind.TaskLaunch, "main.oi:13:11")
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Judgment, "main.oi:4:12"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.TaskCompletion, "main.oi:4:12"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Await, "main.oi:13:5"))
+    operations = legacy.Append(operations, legacy.Atomic(execution.OperationKind.TaskLaunch, "main.oi:14:21"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Judgment, "main.oi:4:12"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.TaskCompletion, "main.oi:4:12"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Await, "main.oi:14:15"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Reply, "main.oi:15:5"))
+    reply := catalog.Reply("text", "4c33b2e76aafc891053900206b0e6157822f49eea4cfc20d6555ad94ea3d0cf9", "review-second")
+    return legacy.Pass("await-immediate", reply, operations)
+}
+
+func ContextIsolation() model.Case {
+    operations := legacy.Atomic(execution.OperationKind.TaskLaunch, "main.oi:14:21")
+    operations = legacy.Append(operations, legacy.Begin(execution.OperationKind.Await, "main.oi:14:15"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Judgment, "main.oi:4:12"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.TaskCompletion, "main.oi:4:12"))
+    operations = legacy.Append(operations, legacy.End(execution.OperationKind.Await, execution.OperationStatus.Completed, "main.oi:14:15"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Reply, "main.oi:19:5"))
+    reply := catalog.Reply("text", "e6d863b30a7e8b4db23fbbdcf3d704fafba693c98aa82b10e0f165a3d0a0d72d", "child-safe")
+    return legacy.Pass("context-isolation", reply, operations)
+}
+
+func Encoding() model.Case {
+    operations := []model.OperationExpectation{}
+    operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:41:18", 1)
+    operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:44:25", 1)
+    operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:48:31", 1)
+    operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:60:18", 1)
+    operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:63:25", 1)
+    operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:67:30", 2)
+    operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:41:18", 1)
+    operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:44:25", 1)
+    operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:60:18", 1)
+    operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:63:25", 1)
+    operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:60:18", 1)
+    operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:63:25", 1)
+    operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:67:30", 6)
+    operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:9:12", 7)
+    operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:29:12", 1)
+    operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:35:12", 1)
+    operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:29:12", 1)
+    operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:35:12", 1)
+    index := 0
+    for index < 5 {
+        operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:41:18", 1)
+        operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:54:22", 1)
+        operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:55:23", 1)
+        index = index + 1
+    }
+    index = 0
+    for index < 4 {
+        operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:60:18", 1)
+        operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:73:22", 1)
+        operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:74:23", 1)
+        index = index + 1
+    }
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Reply, "main.oi:76:5"))
+    reply := catalog.Reply("bool", "ae905006eb32cd0dae7636ecd8d99cbd20673533ed2b23cbfd253a21798c5d7c", "true")
+    return legacy.Pass("encoding", reply, operations)
+}
+
+func Cases() []model.Case {
+    operations := []model.OperationExpectation{
+        catalog.Operation(execution.OperationKind.Allocation, execution.OperationStatus.Completed, "main.oi:9:29"),
+        catalog.Operation(execution.OperationKind.Derivation, execution.OperationStatus.Started, "main.oi:9:29"),
+        catalog.Operation(execution.OperationKind.Derivation, execution.OperationStatus.Failed, "main.oi:9:29"),
+    }
+    return []model.Case{
+        catalog.CompileCase("derive", "corpus/valid/derive", model.Status.Pass, "none"),
+        catalog.CompileCase(
+            "unbounded-semantic-result",
+            "corpus/invalid/unbounded-semantic-result",
+            model.Status.StaticFail,
+            "UNBOUNDED_SEMANTIC_RESULT",
+        ),
+        catalog.RuntimeCase(
+            "nondeterministic-derivation",
+            "corpus/runtime/nondeterministic-derivation",
+            model.Status.RuntimeFail,
+            "NONDETERMINISTIC_DERIVATION",
+            none,
+            catalog.Receipt(execution.TerminalStatus.Failed, "NONDETERMINISTIC_DERIVATION", operations),
+        ),
+        AuthorityIntersection(),
+        AwaitImmediate(),
+        ContextIsolation(),
+        Encoding(),
+    }
+}

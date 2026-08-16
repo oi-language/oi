@@ -29,13 +29,24 @@ type MappingIdentity struct {
 }
 
 type OperationKind enum {
+    Allocation
     Judgment
     Derivation
     Effect
     TaskLaunch
+    TaskCompletion
     Await
-    ChannelCommit
+    Join
     Detach
+    DetachNotification
+    TaskStatus
+    TaskCancel
+    ChannelCreate
+    MessageCommit
+    Send
+    Receive
+    Select
+    UserSuspension
     Handoff
     Reply
 }
@@ -45,6 +56,7 @@ type OperationStatus enum {
     Completed
     Failed
     Indeterminate
+    Cancelled
 }
 
 type TerminalStatus enum {

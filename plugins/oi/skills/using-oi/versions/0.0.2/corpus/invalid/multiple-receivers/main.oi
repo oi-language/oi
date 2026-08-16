@@ -1,0 +1,13 @@
+package main
+
+func Consume(input receiver[text]) unit {
+    receive(input)
+}
+
+func main() {
+    link := channel[text](1)
+    first := oi Consume(link.Receive)
+    second := oi Consume(link.Receive)
+    await first
+    await second
+}

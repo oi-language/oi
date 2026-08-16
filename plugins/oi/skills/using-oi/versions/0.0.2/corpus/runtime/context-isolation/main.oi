@@ -1,0 +1,20 @@
+package main
+
+func Inspect(change text) text {
+    return [review only explicit child argument {change}]
+}
+
+effect Reply(value text) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main(change text, sentinel text) {
+    var parentOnly text = sentinel
+    result := await oi Inspect(change)
+    if len(parentOnly) == 0 {
+        Reply(result)
+        return
+    }
+    Reply(result)
+}

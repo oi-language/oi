@@ -1,0 +1,77 @@
+package main
+
+import "std/encoding"
+
+func InvalidRecord(source text, detail text) bool {
+    result := capture(encoding.ParseRecord(source))
+    if result.Ok {
+        return false
+    }
+    return result.Failure.Category == "INVALID_ENCODING" && result.Failure.Detail == detail
+}
+
+func InvalidList(source text, detail text) bool {
+    result := capture(encoding.ParseList(source))
+    if result.Ok {
+        return false
+    }
+    return result.Failure.Category == "INVALID_ENCODING" && result.Failure.Detail == detail
+}
+
+func InvalidFields(fields []encoding.Field, detail text) bool {
+    result := capture(encoding.Record(fields))
+    if result.Ok {
+        return false
+    }
+    return result.Failure.Category == "INVALID_ENCODING" && result.Failure.Detail == detail
+}
+
+func Verify() bool {
+    fields := encoding.ParseRecord("{\"a\":\"b\"}")
+    values := encoding.ParseList("[\"a\",\"b\"]")
+    emptyFields := encoding.ParseRecord("{}")
+    emptyValues := encoding.ParseList("[]")
+    specialValues := encoding.ParseList("[\"\\u0000\",\"\\u0001\",\"\\u001F\",\"\\\"\",\"\\\\\",\"é\"]")
+    duplicateFields := []encoding.Field{
+        encoding.Field{Name: "a", Value: "1"},
+        encoding.Field{Name: "a", Value: "2"},
+    }
+    return encoding.Quote("\n") == "\"\\u000A\"" &&
+        len(specialValues) == 6 &&
+        encoding.Quote(specialValues[0]) == "\"\\u0000\"" &&
+        encoding.Quote(specialValues[1]) == "\"\\u0001\"" &&
+        encoding.Quote(specialValues[2]) == "\"\\u001F\"" &&
+        encoding.Quote(specialValues[3]) == "\"\\\"\"" &&
+        encoding.Quote(specialValues[4]) == "\"\\\\\"" &&
+        encoding.Quote(specialValues[5]) == "\"é\"" &&
+        encoding.Record([]encoding.Field{encoding.Field{Name: "a", Value: "b"}}) == "{\"a\":\"b\"}" &&
+        encoding.List([]text{"a", "b"}) == "[\"a\",\"b\"]" &&
+        encoding.Record([]encoding.Field{}) == "{}" &&
+        encoding.List([]text{}) == "[]" &&
+        len(fields) == 1 && fields[0].Name == "a" && fields[0].Value == "b" &&
+        len(values) == 2 && values[0] == "a" && values[1] == "b" &&
+        len(emptyFields) == 0 && len(emptyValues) == 0 &&
+        InvalidFields(
+            []encoding.Field{encoding.Field{Name: "", Value: "b"}},
+            "INVALID_ENCODING: empty record field name",
+        ) &&
+        InvalidFields(duplicateFields, "INVALID_ENCODING: duplicate record field name a") &&
+        InvalidRecord("{\"\":\"b\"}", "INVALID_ENCODING: record at byte 2") &&
+        InvalidRecord("{\"a\":\"1\",\"a\":\"2\"}", "INVALID_ENCODING: record at byte 11") &&
+        InvalidRecord("{\"a\":\"b\" }", "INVALID_ENCODING: record at byte 8") &&
+        InvalidRecord("{\"a\":}", "INVALID_ENCODING: record at byte 5") &&
+        InvalidRecord("{\"a\":\"b\"", "INVALID_ENCODING: record at byte 8") &&
+        InvalidList("[\"a\",]", "INVALID_ENCODING: list at byte 5") &&
+        InvalidList("[\"\\n\"]", "INVALID_ENCODING: list at byte 3") &&
+        InvalidList("[\"\\u0\"]", "INVALID_ENCODING: list at byte 5") &&
+        InvalidList("[\"\\u000a\"]", "INVALID_ENCODING: list at byte 7")
+}
+
+effect Reply(value bool) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main() {
+    Reply(Verify())
+}

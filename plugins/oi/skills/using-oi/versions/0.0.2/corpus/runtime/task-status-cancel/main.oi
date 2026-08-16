@@ -1,0 +1,26 @@
+package main
+
+import "std/task"
+
+func Slow(value text) text {
+    held := Hold(value)
+    return [finish after {held}]
+}
+
+effect Hold(value text) text {
+    uses local.hold
+    contract [suspend until the harness completes or cancels this invocation]
+}
+
+effect Reply(value []task.State) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main() {
+    handle := oi Slow("cancel-7")
+    before := task.Status(handle)
+    task.Cancel(handle)
+    after := task.Status(handle)
+    Reply([]task.State{before.State, after.State})
+}

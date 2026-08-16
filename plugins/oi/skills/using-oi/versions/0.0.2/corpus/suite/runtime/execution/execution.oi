@@ -1,0 +1,25 @@
+package execution
+
+import "oi/corpus/0.0.2/suite/model"
+
+func Cases(
+    loadingCases []model.Case,
+    collectionCases []model.Case,
+    derivationCases []model.Case,
+    legacyCases []model.Case,
+) []model.Case {
+    cases := []model.Case{}
+    for item in loadingCases {
+        cases = append(cases, item)
+    }
+    for item in collectionCases {
+        cases = append(cases, item)
+    }
+    for item in derivationCases {
+        cases = append(cases, item)
+    }
+    for item in legacyCases {
+        cases = append(cases, item)
+    }
+    return cases
+}

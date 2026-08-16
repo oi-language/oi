@@ -1,0 +1,10 @@
+package main
+
+func Next(input receiver[text]) unit {
+    receive(input)
+}
+
+func main() {
+    link := channel[text](1)
+    handoff Next(link.Receive)
+}

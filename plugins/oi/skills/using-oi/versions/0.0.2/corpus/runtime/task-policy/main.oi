@@ -1,0 +1,10 @@
+package main
+
+func Recurse(level int) unit {
+    child := oi Recurse(level + 1)
+    await child
+}
+
+func main() {
+    await oi Recurse(0)
+}

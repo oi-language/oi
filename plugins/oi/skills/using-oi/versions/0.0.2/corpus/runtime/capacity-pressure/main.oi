@@ -1,0 +1,20 @@
+package main
+
+func Grandchild(value text) text {
+    return [grandchild {value}]
+}
+
+func Child(value text) text {
+    grandchild := oi Grandchild(value)
+    return await grandchild
+}
+
+effect Reply(value text) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main() {
+    result := await oi Child("pressure-7")
+    Reply(result)
+}

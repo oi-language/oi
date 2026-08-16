@@ -1,0 +1,88 @@
+package loading
+
+import "std/execution"
+import "oi/corpus/0.0.2/suite/catalog"
+import "oi/corpus/0.0.2/suite/model"
+import "oi/corpus/0.0.2/suite/runtime/legacy"
+
+func AttachedCancellation() model.Case {
+    operations := legacy.Atomic(execution.OperationKind.TaskLaunch, "main.oi:14:5")
+    operations = legacy.Append(operations, legacy.Atomic(execution.OperationKind.TaskLaunch, "main.oi:15:5"))
+    operations = legacy.Append(operations, legacy.Begin(execution.OperationKind.Join, "main.oi:16:1"))
+    operations = legacy.Append(operations, legacy.Terminate(execution.OperationKind.TaskCompletion, execution.OperationStatus.Failed, "main.oi:4:5"))
+    operations = legacy.Append(operations, legacy.Begin(execution.OperationKind.TaskCancel, "main.oi:15:5"))
+    operations = legacy.Append(operations, legacy.Terminate(execution.OperationKind.TaskCompletion, execution.OperationStatus.Cancelled, "main.oi:15:5"))
+    operations = legacy.Append(operations, legacy.End(execution.OperationKind.TaskCancel, execution.OperationStatus.Completed, "main.oi:15:5"))
+    operations = legacy.Append(operations, legacy.End(execution.OperationKind.Join, execution.OperationStatus.Failed, "main.oi:16:1"))
+    return legacy.Failure("attached-cancellation", "CANCEL_SOURCE_FAILURE", operations)
+}
+
+func AttachedFailureOrder() model.Case {
+    operations := legacy.Atomic(execution.OperationKind.TaskLaunch, "main.oi:14:5")
+    operations = legacy.Append(operations, legacy.Atomic(execution.OperationKind.TaskLaunch, "main.oi:15:5"))
+    operations = legacy.Append(operations, legacy.Begin(execution.OperationKind.Join, "main.oi:16:1"))
+    operations = legacy.Append(operations, legacy.Terminate(execution.OperationKind.TaskCompletion, execution.OperationStatus.Failed, "main.oi:10:5"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Judgment, "main.oi:4:25"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Judgment, "main.oi:5:24"))
+    operations = legacy.Append(operations, legacy.Terminate(execution.OperationKind.TaskCompletion, execution.OperationStatus.Failed, "main.oi:6:5"))
+    operations = legacy.Append(operations, legacy.End(execution.OperationKind.Join, execution.OperationStatus.Failed, "main.oi:16:1"))
+    return legacy.Failure("attached-failure-order", "LOWER_SOURCE_FAILURE", operations)
+}
+
+func CapacityPressure() model.Case {
+    operations := legacy.Atomic(execution.OperationKind.TaskLaunch, "main.oi:18:21")
+    operations = legacy.Append(operations, legacy.Begin(execution.OperationKind.Await, "main.oi:18:15"))
+    operations = legacy.Append(operations, legacy.Atomic(execution.OperationKind.TaskLaunch, "main.oi:8:19"))
+    operations = legacy.Append(operations, legacy.Begin(execution.OperationKind.Await, "main.oi:9:12"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Judgment, "main.oi:4:12"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.TaskCompletion, "main.oi:4:12"))
+    operations = legacy.Append(operations, legacy.End(execution.OperationKind.Await, execution.OperationStatus.Completed, "main.oi:9:12"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.TaskCompletion, "main.oi:9:12"))
+    operations = legacy.Append(operations, legacy.End(execution.OperationKind.Await, execution.OperationStatus.Completed, "main.oi:18:15"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Reply, "main.oi:19:5"))
+    reply := catalog.Reply("text", "6eab34715fb3f3403e037004aed0241c97852d48e9a1d614745f37fdaa7839b1", "grandchild-pressure-7")
+    return legacy.Pass("capacity-pressure", reply, operations)
+}
+
+func DetachNotification() model.Case {
+    operations := legacy.Complete(execution.OperationKind.Judgment, "main.oi:22:26")
+    operations = legacy.Append(operations, legacy.Atomic(execution.OperationKind.TaskLaunch, "main.oi:22:12"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Detach, "main.oi:22:5"))
+    operations = legacy.Append(operations, legacy.Begin(execution.OperationKind.Effect, "main.oi:4:13"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Judgment, "main.oi:23:26"))
+    operations = legacy.Append(operations, legacy.Atomic(execution.OperationKind.TaskLaunch, "main.oi:23:12"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Detach, "main.oi:23:5"))
+    operations = legacy.Append(operations, legacy.Begin(execution.OperationKind.Effect, "main.oi:4:13"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Reply, "main.oi:24:5"))
+    operations = legacy.Append(operations, legacy.End(execution.OperationKind.Effect, execution.OperationStatus.Completed, "main.oi:4:13"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Judgment, "main.oi:8:12"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.TaskCompletion, "main.oi:8:12"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.DetachNotification, "main.oi:8:12"))
+    operations = legacy.Append(operations, legacy.End(execution.OperationKind.Effect, execution.OperationStatus.Completed, "main.oi:4:13"))
+    operations = legacy.Append(operations, legacy.Terminate(execution.OperationKind.TaskCompletion, execution.OperationStatus.Failed, "main.oi:6:9"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.DetachNotification, "main.oi:6:9"))
+    reply := catalog.Reply("text", "7edcd100360c832ea3452faf4a4219201432282ee0b8a84d4af8d3cddec955c6", "parent-complete")
+    return legacy.Pass("detach-notification", reply, operations)
+}
+
+func Cases() []model.Case {
+    return []model.Case{
+        catalog.CompileCase("manifest", "corpus/valid/manifest", model.Status.Pass, "none"),
+        catalog.CompileCase(
+            "missing-source-manifest",
+            "corpus/invalid/missing-source-manifest",
+            model.Status.StaticFail,
+            "MISSING_SOURCE_MANIFEST",
+        ),
+        catalog.CompileCase(
+            "unsorted-source-manifest",
+            "corpus/invalid/unsorted-source-manifest",
+            model.Status.StaticFail,
+            "SOURCE_MANIFEST_ORDER",
+        ),
+        AttachedCancellation(),
+        AttachedFailureOrder(),
+        CapacityPressure(),
+        DetachNotification(),
+    }
+}

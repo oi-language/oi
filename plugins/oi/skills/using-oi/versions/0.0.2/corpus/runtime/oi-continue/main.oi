@@ -1,0 +1,21 @@
+package main
+
+func Combine(summary text, result text) text {
+    return [combine {summary} and {result} without losing either]
+}
+
+func Review(change text) text {
+    return [review {change}]
+}
+
+effect Reply(value text) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main(change text, document text) {
+    review := oi Review(change)
+    var summary text = [summarize {document}]
+    result := await review
+    Reply(Combine(summary, result))
+}

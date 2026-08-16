@@ -1,0 +1,20 @@
+package main
+
+import "std/fs"
+import "std/process"
+import "std/user"
+
+func Inspect(path fs.Path, command process.Command) text {
+    var content text = fs.Read(path)
+    attempt := capture(process.Run(command))
+    if attempt.Ok {
+        return content
+    } else {
+        return attempt.Failure.Category
+    }
+}
+
+func main(path fs.Path, command process.Command) {
+    worker := oi Inspect(path, command)
+    user.Respond(await worker)
+}

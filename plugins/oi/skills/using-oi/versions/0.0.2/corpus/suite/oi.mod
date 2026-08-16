@@ -1,4 +1,11 @@
 module oi/corpus/0.0.2/suite
 oi 0.0.2
+source assert/assert.oi
 source catalog/catalog.oi
 source main.oi
+source model/model.oi
+source runtime/collections/collections.oi
+source runtime/derivation/derivation.oi
+source runtime/execution/execution.oi
+source runtime/legacy/legacy.oi
+source runtime/loading/loading.oi

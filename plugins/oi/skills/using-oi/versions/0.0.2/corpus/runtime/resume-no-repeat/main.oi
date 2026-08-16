@@ -1,0 +1,26 @@
+package main
+
+func Produce(change text, updates sender[text]) text {
+    var result text = [review {change} exactly once]
+    send(updates, result)
+    return result
+}
+
+effect Observe(value text) text {
+    uses caller.observe
+    contract [return one durable observation for {value}]
+}
+
+effect Reply(value text) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main(change text) {
+    updates := channel[text](1)
+    child := oi Produce(change, updates.Send)
+    delivered := receive(updates.Receive)
+    completed := await child
+    observed := Observe(delivered)
+    Reply([report {completed} with {observed}])
+}

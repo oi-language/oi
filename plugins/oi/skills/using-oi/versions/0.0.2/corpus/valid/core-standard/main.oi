@@ -1,0 +1,30 @@
+package main
+
+import (
+    "std/text"
+    "std/diagnostic"
+    "std/encoding"
+    "std/fs"
+)
+
+func Verify() bool {
+    var diagnosticValue diagnostic.Diagnostic = diagnostic.Diagnostic{
+        Category: "fixture",
+        Phase: "type",
+        Location: "main.oi",
+        Detail: "construct core standard types",
+        Trace: []text{},
+    }
+    var field encoding.Field = encoding.Field{Name: "kind", Value: "fixture"}
+    var path fs.Path = fs.Path("core-standard")
+    return text.Contains(text.TrimSpace(" fixture "), field.Value) && diagnosticValue.Category == "fixture" && path == fs.Path("core-standard")
+}
+
+effect Reply(value bool) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main() {
+    Reply(Verify())
+}

@@ -1,0 +1,141 @@
+package assert
+
+import "std/diagnostic"
+import "std/execution"
+import "oi/corpus/0.0.2/suite/model"
+
+func Fail(detail text) unit {
+    stop("CORPUS_ASSERTION_FAILED", detail)
+}
+
+func Catalog(cases []model.Case) unit {
+    if len(cases) == 0 {
+        Fail("catalog is empty")
+    }
+    seenIDs := set[text]{}
+    seenTargets := set[text]{}
+    for item in cases {
+        if item.ID == "" || item.Target == "" ||
+            !(item.Target ~= [the {item.Target} is one normalized relative UTF-8 path with no empty, dot, or dot-dot segment]) ||
+            has(seenIDs, item.ID) || has(seenTargets, item.Target) {
+            Fail("catalog contains an empty or duplicate identity")
+        }
+        seenIDs = add(seenIDs, item.ID)
+        seenTargets = add(seenTargets, item.Target)
+        if item.Phase == model.Phase.Compile && item.Receipt != none {
+            Fail("compile case contains a receipt expectation: " + item.ID)
+        }
+        if item.Phase == model.Phase.Runtime && item.Receipt == none {
+            Fail("runtime case lacks a receipt expectation: " + item.ID)
+        }
+    }
+}
+
+func PresentReceipt(value model.ReceiptExpectation?) model.ReceiptExpectation {
+    return [the exact present model.ReceiptExpectation in {value}]
+}
+
+func PresentFailure(value diagnostic.Diagnostic?) diagnostic.Diagnostic {
+    return [the exact present diagnostic.Diagnostic in {value}]
+}
+
+func PresentText(value text?) text {
+    return [the exact present text in {value}]
+}
+
+func PresentReply(value model.ReplyIdentity?) model.ReplyIdentity {
+    return [the exact present model.ReplyIdentity in {value}]
+}
+
+func PresentValue(value execution.ValueIdentity?) execution.ValueIdentity {
+    return [the exact present execution.ValueIdentity in {value}]
+}
+
+func PresentTypedValue(value execution.TypedValue?) execution.TypedValue {
+    return [the exact present execution.TypedValue in {value}]
+}
+
+func ReplyValueMatches(expected model.ReplyIdentity, value execution.TypedValue) bool {
+    return [true exactly when {value} has public type spelling {expected.Type}, exact source value display {expected.Value},
+        and the frozen canonical typed-value SHA-256 identity {expected.Digest}]
+}
+
+func OperationsMatch(
+    expected []model.OperationExpectation,
+    actual []execution.Operation,
+) bool {
+    if len(expected) != len(actual) {
+        return false
+    }
+    for index, item in expected {
+        if item.Kind != actual[index].Kind ||
+            item.Status != actual[index].Status ||
+            item.Location != actual[index].Location {
+            return false
+        }
+    }
+    return true
+}
+
+func Integrity(
+    receipt execution.ExecutionReceipt,
+    journal execution.ExecutionJournal,
+    expectedReply execution.TypedValue?,
+) bool {
+    return [true exactly when {receipt}, {journal}, and {expectedReply} obey the frozen runtime/execution.md canonical framing:
+        artifact and source identities match the verified ordered manifest; every input, mapping, authority, policy, operation input/result,
+        and present Reply digest is recomputed from its protected canonical typed value; public operations equal journal entries in order;
+        direct-ID creation is limited to TaskLaunch, ChannelCreate, MessageCommit, and Select; every allocated oN has one leading Allocation record and then one fixed boundary Kind;
+        TaskCompletion and DetachNotification use owner/registry oN allocations, all other first operation IDs obey their frozen rules, and Started transitions have exactly one later terminal transition with
+        unchanged kind, location, and inputs despite permitted interleaving, and no terminal transition is followed by the same ID;
+        Indeterminate is only an external Effect; Cancelled is only an already-Started Effect's host-controlled cancellation acknowledgement on that ID
+        or a cancellable task, detach, or lifecycle boundary; ordinary Effect failure remains Failed,
+        all operation outputs and failures match their terminal states, and present or absent Reply fields match {expectedReply} exactly]
+}
+
+func Receipt(
+    caseValue model.Case,
+    actual execution.ExecutionReceipt,
+    journal execution.ExecutionJournal,
+    expectedReply execution.TypedValue?,
+) unit {
+    if caseValue.Phase != model.Phase.Runtime || caseValue.Receipt == none {
+        Fail("receipt assertion requires one runtime expectation")
+    }
+    var expected model.ReceiptExpectation = PresentReceipt(caseValue.Receipt)
+    if actual.Terminal != expected.Terminal || !OperationsMatch(expected.Operations, actual.Operations) {
+        Fail("receipt terminal or operation schedule mismatch: " + caseValue.ID)
+    }
+    if expected.FailureCategory == none {
+        if actual.Failure != none {
+            Fail("unexpected receipt failure: " + caseValue.ID)
+        }
+    } else {
+        if actual.Failure == none {
+            Fail("missing receipt failure: " + caseValue.ID)
+        }
+        var failure diagnostic.Diagnostic = PresentFailure(actual.Failure)
+        if failure.Category != PresentText(expected.FailureCategory) {
+            Fail("receipt failure category mismatch: " + caseValue.ID)
+        }
+    }
+    if caseValue.Reply == none {
+        if expectedReply != none || actual.ReplyOperationID != none || actual.Reply != none {
+            Fail("unexpected Reply: " + caseValue.ID)
+        }
+    } else {
+        if expectedReply == none || actual.ReplyOperationID == none || actual.Reply == none {
+            Fail("missing Reply: " + caseValue.ID)
+        }
+        var expectedIdentity model.ReplyIdentity = PresentReply(caseValue.Reply)
+        var typedValue execution.TypedValue = PresentTypedValue(expectedReply)
+        var actualIdentity execution.ValueIdentity = PresentValue(actual.Reply)
+        if !ReplyValueMatches(expectedIdentity, typedValue) ||
+            actualIdentity.Type != expectedIdentity.Type || actualIdentity.Digest != expectedIdentity.Digest {
+            Fail("Reply identity mismatch: " + caseValue.ID)
+        }
+    }
+    if !Integrity(actual, journal, expectedReply) {
+        Fail("receipt identity or digest mismatch: " + caseValue.ID)
+    }
+}

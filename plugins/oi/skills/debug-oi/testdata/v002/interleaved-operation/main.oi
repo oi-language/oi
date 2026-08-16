@@ -1,0 +1,24 @@
+package main
+
+import "std/user"
+
+func AskWorker(prompt user.Prompt) user.Answer {
+    return user.Ask(prompt)
+}
+
+func Probe() text {
+    return "probe-complete"
+}
+
+effect Reply(value text) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main(prompt user.Prompt) {
+    askTask := oi AskWorker(prompt)
+    probeTask := oi Probe()
+    probe := await probeTask
+    answer := await askTask
+    Reply(answer.Value + " " + probe)
+}

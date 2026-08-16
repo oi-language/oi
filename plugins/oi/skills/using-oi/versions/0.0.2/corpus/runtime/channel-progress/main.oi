@@ -1,0 +1,36 @@
+package main
+
+type Progress struct {
+    Phase text
+    Completed int
+}
+
+func Combine(summary text, result text, updates []Progress) text {
+    return [combine {summary}, {result}, and the ordered {updates}]
+}
+
+func Review(change text, updates sender[Progress]) text {
+    send(updates, Progress{Phase: "scan", Completed: 1})
+    return [review {change}]
+}
+
+effect Reply(value text) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main(change text, document text) {
+    updates := channel[Progress](8)
+    review := oi Review(change, updates.Send)
+    var summary text = [summarize {document}]
+    seen := []Progress{}
+    for {
+        select {
+        case update := receive(updates.Receive):
+            seen = append(seen, update)
+        case result := await review:
+            Reply(Combine(summary, result, seen))
+            return
+        }
+    }
+}

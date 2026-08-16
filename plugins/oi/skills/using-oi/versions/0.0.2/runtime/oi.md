@@ -38,6 +38,6 @@ A launch with a free slot is admitted; otherwise it enters the same queue as eac
 
 Owner is the launching dynamic function activation. Discarding a handle preserves attachment; handles do not transfer ownership.
 
-At normal scope exit, the owner implicitly joins unobserved attached tasks in ascending SourceIndex while they continue concurrently. Success is discarded. First observed failure becomes owner failure and recursively cancels each still-running greater-index sibling. Thus lowest failing index wins even if a higher one completed first. A descendant failure belongs to its nearest attached ancestor completion.
+At normal scope exit, the owner implicitly joins unobserved attached tasks in ascending SourceIndex while they continue concurrently. The implicit Join operation Location is the owner function's closing `}` token. Success is discarded. First observed failure becomes owner failure and recursively cancels each still-running greater-index sibling. Thus lowest failing index wins even if a higher one completed first. A descendant failure belongs to its nearest attached ancestor completion.
 
 Cancellation is recursive and idempotent. Before a stopped/cancelled owner becomes terminal it requests cancellation of all still-running children; they do likewise for descendants. Terminal completion is immutable. A cancelled task records `TASK_CANCELLED` at its launch `oi`.

@@ -1,0 +1,42 @@
+package model
+
+import "std/execution"
+
+type Phase enum {
+    Compile
+    Runtime
+}
+
+type Status enum {
+    Pass
+    StaticFail
+    RuntimeFail
+}
+
+type ReplyIdentity struct {
+    Type text
+    Digest text
+    Value text
+}
+
+type OperationExpectation struct {
+    Kind execution.OperationKind
+    Status execution.OperationStatus
+    Location text
+}
+
+type ReceiptExpectation struct {
+    Terminal execution.TerminalStatus
+    FailureCategory text?
+    Operations []OperationExpectation
+}
+
+type Case struct {
+    ID text
+    Target text
+    Phase Phase
+    Status Status
+    Category text
+    Reply ReplyIdentity?
+    Receipt ReceiptExpectation?
+}

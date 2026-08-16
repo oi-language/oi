@@ -1,0 +1,10 @@
+package main
+
+effect Notify(value text) unit {
+    uses caller.notify
+    contract [notify the caller with {value}]
+}
+
+func main(change text) {
+    oi Notify(change)
+}

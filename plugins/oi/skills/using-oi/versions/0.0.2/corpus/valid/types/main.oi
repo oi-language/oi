@@ -1,0 +1,42 @@
+package main
+
+type Status enum {
+    Pending
+    Done
+}
+type Finding struct {
+    Status Status
+    Evidence []text
+    Attempts int
+    Accepted bool
+    Note text?
+}
+
+func ValidateEvidence(values []text) unit {
+    for value in values {
+        if !(value ~= [the {value} is non-empty]) {
+            stop("TYPE_CONTRACT_MISMATCH", "Finding.Evidence contains an empty item")
+        }
+    }
+}
+
+func Build() Finding {
+    result := Finding{
+        Status: Status.Done,
+        Evidence: []text{"typed", "structured"},
+        Attempts: 2,
+        Accepted: true,
+        Note: none,
+    }
+    ValidateEvidence(result.Evidence)
+    return result
+}
+
+effect Reply(value Finding) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main() {
+    Reply(Build())
+}

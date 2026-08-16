@@ -1,0 +1,29 @@
+package main
+
+func Transform(items []int) []int {
+    values := []int{}
+    for item in items {
+        if item < 0 {
+            continue
+        }
+        switch item {
+        case 0:
+            break
+        default:
+            values = append(values, item)
+        }
+    }
+    for len(values) < 3 {
+        values = append(values, 1)
+    }
+    return values
+}
+
+effect Reply(value []int) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main(items []int) {
+    Reply(Transform(items))
+}

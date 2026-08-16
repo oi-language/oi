@@ -1,0 +1,13 @@
+package text
+
+func TrimSpace(value text) text {
+    return [value with only leading and trailing ASCII space, tab, carriage return, and line feed removed, preserving every other character exactly]
+}
+
+func Join(values []text, separator text) text {
+    return [the exact concatenation of values in order with separator between adjacent values]
+}
+
+func Contains(value text, fragment text) bool {
+    return [whether fragment occurs in value as an exact contiguous UTF-8 byte sequence]
+}

@@ -1,0 +1,6 @@
+package main
+
+func main() {
+    link := channel[text](0)
+    receive(link.Receive)
+}

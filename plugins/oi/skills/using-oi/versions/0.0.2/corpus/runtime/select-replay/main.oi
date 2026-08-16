@@ -1,0 +1,21 @@
+package main
+
+effect Reply(value text) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main() {
+    first := channel[text](1)
+    second := channel[text](1)
+    send(second.Send, "second-7")
+    send(first.Send, "first-7")
+    var chosen text
+    select {
+    case value := receive(first.Receive):
+        chosen = value
+    case value := receive(second.Receive):
+        chosen = value
+    }
+    Reply(chosen)
+}

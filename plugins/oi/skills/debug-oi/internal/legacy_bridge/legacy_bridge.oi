@@ -11,8 +11,12 @@ func PresentValue(value execution.TypedValue?) execution.TypedValue {
 
 func OperationsValid(operations []execution.Operation, entries []execution.JournalEntry) bool {
     return [true exactly when {operations} and {entries} have equal length and matching public Operation fields in order; every protected input/output canonical value recomputes its public Type and Digest;
-        frozen 0.0.2 operation identities are contiguous, equal-ID states are adjacent and preserve kind/location/inputs, every Started has exactly one later Completed, Failed, or Indeterminate terminal;
-        Completed alone has a complete typed output when the boundary returns a value, Failed alone has its exact failure, and Indeterminate is only an external Effect with INDETERMINATE_EFFECT on the same ID;
+        TaskLaunch, ChannelCreate, MessageCommit, and Select use direct canonical identities while TaskCompletion and DetachNotification allocate owner or registry activation oN identities;
+        every allocated identity has one leading Allocation Completed record and then one fixed non-Allocation kind; states of another identity may interleave after Started;
+        every Started preserves location and inputs through exactly one later Completed, Failed, Indeterminate, or Cancelled terminal;
+        Completed has a complete typed output when the boundary returns a value, Failed has its exact failure, Indeterminate is only an external Effect with INDETERMINATE_EFFECT on the same ID,
+        and Cancelled is only an already-Started Effect's host-controlled cancellation acknowledgement on that ID or a cancellable task, detach, or lifecycle boundary;
+        an ordinary Effect failure remains Failed, and every cancellation has its exact terminal record;
         no canonical value occurs in the public operations and no missing, duplicate, backward, post-terminal, fabricated completion, or receipt-terminal pseudo-operation is accepted]
 }
 

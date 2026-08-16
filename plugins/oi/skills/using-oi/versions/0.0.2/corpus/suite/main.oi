@@ -1,12 +1,27 @@
 package main
 
+import "oi/corpus/0.0.2/suite/assert"
 import "oi/corpus/0.0.2/suite/catalog"
+import "oi/corpus/0.0.2/suite/model"
+import "oi/corpus/0.0.2/suite/runtime/collections"
+import "oi/corpus/0.0.2/suite/runtime/derivation"
+import "oi/corpus/0.0.2/suite/runtime/execution"
+import "oi/corpus/0.0.2/suite/runtime/legacy"
+import "oi/corpus/0.0.2/suite/runtime/loading"
 
-effect Reply(value []catalog.Case) unit {
+effect Reply(value []model.Case) unit {
     uses caller.reply
     contract [deliver {value} exactly once to the caller]
 }
 
 func main() {
-    Reply(catalog.Cases())
+    runtimeCases := execution.Cases(
+        loading.Cases(),
+        collections.Cases(),
+        derivation.Cases(),
+        legacy.Cases(),
+    )
+    cases := catalog.Cases(runtimeCases)
+    assert.Catalog(cases)
+    Reply(cases)
 }

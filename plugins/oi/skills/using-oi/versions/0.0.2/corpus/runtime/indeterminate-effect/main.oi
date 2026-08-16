@@ -1,0 +1,10 @@
+package main
+
+effect Publish(value text) unit {
+    uses caller.publish
+    contract [publish {value} at most once]
+}
+
+func main(value text) {
+    Publish(value)
+}
