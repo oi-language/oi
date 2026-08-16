@@ -1,0 +1,512 @@
+package load
+
+import "std/diagnostic"
+import "std/fs"
+import "oi/skills/compile-oi/internal/model"
+import "oi/skills/compile-oi/internal/parse"
+
+type ManifestParse struct {
+    Module text
+    Version model.LanguageVersion?
+    Sources []model.SourceDirective
+    Diagnostics []diagnostic.Diagnostic
+}
+
+type ModuleProbe struct {
+    Manifest model.ModuleManifest?
+    Diagnostics []diagnostic.Diagnostic
+}
+
+type LogicalReadProbe struct {
+    Source model.LogicalSource?
+    Diagnostics []diagnostic.Diagnostic
+}
+
+type TargetRead struct {
+    Directory fs.Path
+    Paths []fs.Path
+    Sources []model.SourceFile
+    Diagnostics []diagnostic.Diagnostic
+}
+
+type ImportTarget struct {
+    Directory fs.Path
+    Package text
+    Standard bool
+    Outside bool
+}
+
+type Graph struct {
+    Manifest model.ModuleManifest?
+    RootPaths []fs.Path
+    Sources []model.SourceFile
+    SourceIdentities []model.SourceIdentity
+    SourceCharacters int
+    ParseDiagnostics []diagnostic.Diagnostic
+    ModuleDiagnostics []diagnostic.Diagnostic
+    PackageDiagnostics []diagnostic.Diagnostic
+    VisitedPackages []fs.Path
+    ManifestClosure []text
+}
+
+effect ReadVerifiedSource(root fs.Path, path fs.Path) LogicalReadProbe {
+    uses workspace.read
+    contract [for normalized module-relative {path}, read {path} beneath explicit module root {root} as contiguous,
+        nonoverlapping bytes monotonically from offset zero through true EOF exactly once; decode strict UTF-8; close with the final
+        byte count, decoded character count, and lowercase 64-character SHA-256; compare all three close observations with the exact
+        content and model.SourceIdentity returned in LogicalReadProbe.Source, whose Identity.Path is exactly {path}; return no Source
+        and exactly one module-phase diagnostic at {path}:1:1 with SOURCE_TRUNCATED for invalid UTF-8, a gap, overlap, rewind,
+        repetition, missing EOF, or premature EOF, or SOURCE_CHANGED_DURING_LOAD for any final byte-count, character-count, SHA-256,
+        metadata, or content drift; return no diagnostic only for a verified complete stable model.LogicalSource]
+}
+
+func FindNearestModule(target fs.Path) ModuleProbe {
+    var state fs.Observation = fs.Scan(target)
+    var directory fs.Path = TargetDirectory(target, state)
+    for candidate in AncestorDirectories(directory) {
+        var path fs.Path = Join(candidate, "oi.mod")
+        var observation fs.Observation = fs.Scan(path)
+        if observation.Kind == fs.Kind.File {
+            var parsed ManifestParse = ParseManifest(fs.Read(path))
+            if len(parsed.Diagnostics) != 0 || parsed.Version == none {
+                return ModuleProbe{Manifest: none, Diagnostics: parsed.Diagnostics}
+            }
+            var version model.LanguageVersion = PresentVersion(parsed.Version)
+            return ModuleProbe{
+                Manifest: model.ModuleManifest{
+                    Root: candidate,
+                    Path: path,
+                    Module: parsed.Module,
+                    Version: version,
+                    Sources: parsed.Sources,
+                },
+                Diagnostics: []diagnostic.Diagnostic{},
+            }
+        }
+    }
+    return ModuleProbe{
+        Manifest: none,
+        Diagnostics: []diagnostic.Diagnostic{
+            diagnostic.New("MISSING_MODULE_FILE", "module", Location(directory), "nearest oi.mod"),
+        },
+    }
+}
+
+func ParseManifest(content text) ManifestParse {
+    return [parse exact held UTF-8 oi.mod {content}, ignoring only blank and comment lines; accept one canonical module directive
+        followed by exact oi 0.0.1 and no source directives, or followed by exact oi 0.0.2 and one or more source directives;
+        preserve each 0.0.2 source as model.SourceDirective with NormalizeSourcePath result, canonical directive location, and
+        zero-based physical source-directive order; reject malformed/unsupported module or version without fabricating a
+        LanguageVersion; for 0.0.2 report MISSING_SOURCE_MANIFEST at oi.mod:1:1 with detail source manifest required when absent,
+        SOURCE_MANIFEST_PATH at oi.mod:1:1 for a duplicate, non-normalized, absolute, empty, dot, dot-dot, backslash, or escaping
+        source path, and SOURCE_MANIFEST_ORDER at oi.mod:1:1 unless distinct source path UTF-8 bytes are strictly ascending;
+        return deterministic module-phase diagnostics and no manifest version when the module/version directives are invalid]
+}
+
+func NormalizeSourcePath(path text) fs.Path? {
+    return [the normalized module-relative UTF-8 fs.Path equal to {path} only when it contains no backslash, absolute prefix,
+        empty or edge segment, dot segment, dot-dot segment, or escape and ends in .oi; otherwise none]
+}
+
+func ReadLogicalSource(root fs.Path, path fs.Path) LogicalReadProbe {
+    return ReadVerifiedSource(root, path)
+}
+
+func LoadGraph(target fs.Path) Graph {
+    var probe ModuleProbe = FindNearestModule(target)
+    if probe.Manifest == none {
+        return EmptyGraph(probe.Diagnostics)
+    }
+    var manifest model.ModuleManifest = PresentManifest(probe.Manifest)
+    if manifest.Version == model.LanguageVersion.Oi0_0_1 {
+        return LoadLegacyGraph(target, manifest)
+    }
+    return LoadManifestGraph(manifest)
+}
+
+func LoadManifestGraph(manifest model.ModuleManifest) Graph {
+    var graph Graph = Graph{
+        Manifest: manifest,
+        RootPaths: []fs.Path{},
+        Sources: []model.SourceFile{},
+        SourceIdentities: []model.SourceIdentity{},
+        SourceCharacters: 0,
+        ParseDiagnostics: []diagnostic.Diagnostic{},
+        ModuleDiagnostics: []diagnostic.Diagnostic{},
+        PackageDiagnostics: []diagnostic.Diagnostic{},
+        VisitedPackages: []fs.Path{manifest.Root},
+        ManifestClosure: []text{},
+    }
+    var logical []model.LogicalSource = []model.LogicalSource{}
+    for directive in manifest.Sources {
+        var read LogicalReadProbe = ReadLogicalSource(manifest.Root, directive.Path)
+        graph.ModuleDiagnostics = AppendDiagnostics(graph.ModuleDiagnostics, read.Diagnostics)
+        if read.Source != none {
+            var source model.LogicalSource = PresentLogicalSource(read.Source)
+            logical = append(logical, source)
+            graph.SourceIdentities = append(graph.SourceIdentities, source.Identity)
+            graph.SourceCharacters = graph.SourceCharacters + source.Identity.Characters
+        }
+    }
+    if len(graph.ModuleDiagnostics) != 0 {
+        return graph
+    }
+    graph.ModuleDiagnostics = SourceBudgetDiagnostics(logical)
+    if len(graph.ModuleDiagnostics) != 0 {
+        return graph
+    }
+    for source in logical {
+        var path fs.Path = JoinPath(manifest.Root, source.Identity.Path)
+        graph.Sources = append(graph.Sources, parse.Source(path, source.Content, manifest.Version))
+        if source.Identity.Path == "main.oi" {
+            graph.RootPaths = append(graph.RootPaths, path)
+        }
+    }
+    graph.ParseDiagnostics = LocalDiagnostics(graph.Sources, "parse")
+    if len(graph.ParseDiagnostics) != 0 {
+        return graph
+    }
+    graph.PackageDiagnostics = ValidateManifestPackages(manifest, graph.Sources)
+    if len(graph.PackageDiagnostics) == 0 {
+        graph.PackageDiagnostics = ValidateManifestImports(manifest, graph.Sources)
+    }
+    graph.ManifestClosure = ManifestClosure(graph.Sources)
+    return graph
+}
+
+func LoadLegacyGraph(target fs.Path, manifest model.ModuleManifest) Graph {
+    var root TargetRead = ReadLegacyTarget(target, manifest.Version)
+    var graph Graph = Graph{
+        Manifest: manifest,
+        RootPaths: root.Paths,
+        Sources: root.Sources,
+        SourceIdentities: []model.SourceIdentity{},
+        SourceCharacters: 0,
+        ParseDiagnostics: root.Diagnostics,
+        ModuleDiagnostics: []diagnostic.Diagnostic{},
+        PackageDiagnostics: []diagnostic.Diagnostic{},
+        VisitedPackages: []fs.Path{root.Directory},
+        ManifestClosure: []text{},
+    }
+    if len(graph.ParseDiagnostics) != 0 {
+        return graph
+    }
+    graph.PackageDiagnostics = ValidateLegacyRootPackages(graph.RootPaths, graph.Sources)
+    if len(graph.PackageDiagnostics) == 0 {
+        graph = LoadLegacyImports(graph, root.Sources, []fs.Path{root.Directory})
+    }
+    graph.ManifestClosure = ManifestClosure(graph.Sources)
+    return graph
+}
+
+func ReadLegacyTarget(target fs.Path, version model.LanguageVersion) TargetRead {
+    var observation fs.Observation = fs.Scan(target)
+    var directory fs.Path = TargetDirectory(target, observation)
+    var directoryState fs.Observation = fs.Scan(directory)
+    var paths []fs.Path = []fs.Path{}
+    if observation.Kind == fs.Kind.File && IsOiSource(target) {
+        paths = append(paths, target)
+    } else {
+        paths = PackageSourcePaths(directoryState)
+    }
+    var sources []model.SourceFile = ReadSources(paths, version)
+    return TargetRead{
+        Directory: directory,
+        Paths: paths,
+        Sources: sources,
+        Diagnostics: LocalDiagnostics(sources, "parse"),
+    }
+}
+
+func LoadLegacyImports(graph Graph, sources []model.SourceFile, active []fs.Path) Graph {
+    for source in sources {
+        for importValue in source.Imports {
+            var target ImportTarget = ResolveImport(graph.Manifest, importValue)
+            if target.Outside {
+                graph.PackageDiagnostics = append(graph.PackageDiagnostics,
+                    diagnostic.New("IMPORT_OUTSIDE_MODULE", "module", importValue.Location, importValue.Path))
+            } else if ContainsPath(active, target.Directory) {
+                graph.PackageDiagnostics = append(graph.PackageDiagnostics,
+                    diagnostic.New("CIRCULAR_IMPORT", "module", importValue.Location, importValue.Path))
+            } else if !ContainsPath(graph.VisitedPackages, target.Directory) {
+                graph = LoadLegacyPackage(graph, target, fs.Scan(target.Directory), append(active, target.Directory))
+            }
+        }
+    }
+    return graph
+}
+
+func LoadLegacyPackage(graph Graph, target ImportTarget, observation fs.Observation, active []fs.Path) Graph {
+    graph.VisitedPackages = append(graph.VisitedPackages, target.Directory)
+    if observation.Kind != fs.Kind.Directory {
+        graph.PackageDiagnostics = append(graph.PackageDiagnostics,
+            diagnostic.New("MISSING_IMPORT", "module", Location(target.Directory), target.Package))
+        return graph
+    }
+    var boundary []diagnostic.Diagnostic = ObserveLegacyBoundary(graph.Manifest, target, observation)
+    graph.PackageDiagnostics = AppendDiagnostics(graph.PackageDiagnostics, boundary)
+    if len(boundary) != 0 {
+        return graph
+    }
+    var paths []fs.Path = PackageSourcePaths(observation)
+    var sources []model.SourceFile = ReadSources(paths, model.LanguageVersion.Oi0_0_1)
+    graph.Sources = AppendSources(graph.Sources, sources)
+    var parseDiagnostics []diagnostic.Diagnostic = LocalDiagnostics(sources, "parse")
+    graph.ParseDiagnostics = AppendDiagnostics(graph.ParseDiagnostics, parseDiagnostics)
+    if len(parseDiagnostics) != 0 {
+        return graph
+    }
+    var packageDiagnostics []diagnostic.Diagnostic = ValidateLegacyImportedPackage(target.Package, sources)
+    graph.PackageDiagnostics = AppendDiagnostics(graph.PackageDiagnostics, packageDiagnostics)
+    if len(packageDiagnostics) == 0 {
+        graph = LoadLegacyImports(graph, sources, active)
+    }
+    return graph
+}
+
+func ObserveLegacyBoundary(
+    manifest model.ModuleManifest?,
+    target ImportTarget,
+    observation fs.Observation,
+) []diagnostic.Diagnostic {
+    var diagnostics []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
+    if target.Standard {
+        diagnostics = ValidateStandardBoundary(target, observation)
+    } else {
+        for directory in BoundaryDirectories(manifest, target.Directory) {
+            var path fs.Path = Join(directory, "oi.mod")
+            if fs.Scan(path).Kind == fs.Kind.File {
+                diagnostics = AppendDiagnostics(diagnostics, CompareNestedModule(manifest, path, fs.Read(path)))
+            }
+        }
+    }
+    return diagnostics
+}
+
+func ReadSources(paths []fs.Path, version model.LanguageVersion) []model.SourceFile {
+    var sources []model.SourceFile = []model.SourceFile{}
+    for path in paths {
+        if fs.Scan(path).Kind == fs.Kind.File {
+            sources = append(sources, parse.Source(path, fs.Read(path), version))
+        }
+    }
+    return sources
+}
+
+func PackageSourcePaths(observation fs.Observation) []fs.Path {
+    var paths []fs.Path = []fs.Path{}
+    for path in OrderedPaths(observation.Entries) {
+        if fs.Scan(path).Kind == fs.Kind.File && IsOiSource(path) {
+            paths = append(paths, path)
+        }
+    }
+    return paths
+}
+
+func EmptyGraph(diagnostics []diagnostic.Diagnostic) Graph {
+    return Graph{
+        Manifest: none,
+        RootPaths: []fs.Path{},
+        Sources: []model.SourceFile{},
+        SourceIdentities: []model.SourceIdentity{},
+        SourceCharacters: 0,
+        ParseDiagnostics: []diagnostic.Diagnostic{},
+        ModuleDiagnostics: diagnostics,
+        PackageDiagnostics: []diagnostic.Diagnostic{},
+        VisitedPackages: []fs.Path{},
+        ManifestClosure: []text{},
+    }
+}
+
+func SourceBudgetDiagnostics(sources []model.LogicalSource) []diagnostic.Diagnostic {
+    return [in source identity order, exactly one earliest module-phase diagnostic when a verified project source exceeds 16000
+        decoded characters (SOURCE_FILE_BUDGET at its Path:1:1), otherwise when the sum of all verified reachable project source
+        Characters exceeds 128000 (SOURCE_GRAPH_BUDGET at oi.mod:1:1), otherwise when any product .oi physical line exceeds 240
+        decoded characters (SOURCE_LINE_BUDGET at its canonical first overlong line and column 241); do not charge std or runtime;
+        return empty when all three budgets hold]
+}
+
+func ValidateManifestPackages(
+    manifest model.ModuleManifest,
+    sources []model.SourceFile,
+) []diagnostic.Diagnostic {
+    return [the deterministic module diagnostics for exact manifested project sources: first SOURCE_PACKAGE_DUPLICATE at the later
+        source path:1:1 when more than one manifested source occupies one package directory; only when directories are unique,
+        SOURCE_PACKAGE_MISMATCH at the package token when main.oi is not package main or a non-root source package differs from its
+        directory-final segment and basename; source ordering is manifest order]
+}
+
+func ValidateManifestImports(
+    manifest model.ModuleManifest,
+    sources []model.SourceFile,
+) []diagnostic.Diagnostic {
+    return [the first deterministic module diagnostic SOURCE_IMPORT_UNDECLARED at the import location when a non-std reachable import
+        under exact module {manifest.Module} does not resolve uniquely to a package directory represented by exactly one directive in
+        {manifest.Sources}; unlisted .oi files are absent and never scanned or read; also preserve exact circular, outside-module,
+        version-uniform, standard-package, and exported import behavior for otherwise declared imports]
+}
+
+func ParseModuleVersion(version model.LanguageVersion) text {
+    if version == model.LanguageVersion.Oi0_0_1 {
+        return "0.0.1"
+    }
+    return "0.0.2"
+}
+
+func PresentVersion(version model.LanguageVersion?) model.LanguageVersion {
+    return [the present LanguageVersion in {version}; callers establish presence before this function]
+}
+
+func PresentManifest(manifest model.ModuleManifest?) model.ModuleManifest {
+    return [the present ModuleManifest in {manifest}; callers establish presence before this function]
+}
+
+func PresentLogicalSource(source model.LogicalSource?) model.LogicalSource {
+    return [the present LogicalSource in {source}; callers establish presence before this function]
+}
+
+func ModuleRelativeSourcePath(manifest model.ModuleManifest?, path fs.Path) text {
+    return [the exact normalized module-relative UTF-8 path text for {path} under selected {manifest},
+        or the exact normalized path text when {manifest} is none]
+}
+
+func LocalDiagnostics(sources []model.SourceFile, phase text) []diagnostic.Diagnostic {
+    var diagnostics []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
+    for source in sources {
+        for fact in source.StaticFacts {
+            if fact.Phase == phase {
+                diagnostics = append(diagnostics,
+                    diagnostic.New(fact.Category, fact.Phase, fact.Location, fact.Detail))
+            }
+        }
+    }
+    return diagnostics
+}
+
+func ManifestClosure(sources []model.SourceFile) []text {
+    var closure []text = []text{}
+    for source in sources {
+        for path in source.RequiredShards {
+            if !ContainsText(closure, path) {
+                closure = append(closure, path)
+            }
+        }
+    }
+    return closure
+}
+
+func AppendDiagnostics(values []diagnostic.Diagnostic, more []diagnostic.Diagnostic) []diagnostic.Diagnostic {
+    var result []diagnostic.Diagnostic = values
+    for item in more {
+        result = append(result, item)
+    }
+    return result
+}
+
+func AppendSources(values []model.SourceFile, more []model.SourceFile) []model.SourceFile {
+    var result []model.SourceFile = values
+    for item in more {
+        result = append(result, item)
+    }
+    return result
+}
+
+func ContainsText(values []text, expected text) bool {
+    for value in values {
+        if value == expected {
+            return true
+        }
+    }
+    return false
+}
+
+func ContainsPath(values []fs.Path, expected fs.Path) bool {
+    for value in values {
+        if value == expected {
+            return true
+        }
+    }
+    return false
+}
+
+func AncestorDirectories(directory fs.Path) []fs.Path {
+    return [the exact lexical sequence from {directory} through its filesystem root]
+}
+
+func BoundaryDirectories(manifest model.ModuleManifest?, directory fs.Path) []fs.Path {
+    return [the exact lexical directories from {directory} up to but excluding the selected root in {manifest}]
+}
+
+func OrderedPaths(paths []fs.Path) []fs.Path {
+    return [the same distinct {paths} sorted by exact normalized UTF-8 path bytes]
+}
+
+func TargetDirectory(target fs.Path, observation fs.Observation) fs.Path {
+    return [the package directory selected by {target} and its exact {observation}]
+}
+
+func Join(directory fs.Path, name text) fs.Path {
+    return [the normalized child path named {name} within {directory}]
+}
+
+func JoinPath(directory fs.Path, name fs.Path) fs.Path {
+    return [the normalized child path named {name} within {directory}]
+}
+
+func IsOiSource(path fs.Path) bool {
+    return [whether the final path segment of {path} ends exactly in .oi]
+}
+
+func ResolveImport(manifest model.ModuleManifest?, importValue model.Import) ImportTarget {
+    return [the normalized package directory, package name, standard flag, and outside-module flag for unresolved import
+        {importValue.Path} under {manifest}, without claiming any filesystem kind]
+}
+
+func CompareNestedModule(
+    manifest model.ModuleManifest?,
+    path fs.Path,
+    content text,
+) []diagnostic.Diagnostic {
+    return [the VERSION_CONFLICT diagnostics established by nested oi.mod {content} at {path} against exact selected {manifest},
+        including malformed or non-0.0.1 nested version evidence]
+}
+
+func ValidateStandardBoundary(
+    target ImportTarget,
+    observation fs.Observation,
+) []diagnostic.Diagnostic {
+    return [the VERSION_CONFLICT diagnostics when standard package {target} and its exact {observation} are outside the selected
+        Oi 0.0.1 standard-library root]
+}
+
+func ValidateLegacyRootPackages(
+    rootPaths []fs.Path,
+    sources []model.SourceFile,
+) []diagnostic.Diagnostic {
+    var diagnostics []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
+    for source in sources {
+        if ContainsPath(rootPaths, source.Path) && source.Package != "main" {
+            diagnostics = append(diagnostics,
+                diagnostic.New("PACKAGE_MISMATCH", "module", Location(source.Path), source.Package))
+        }
+    }
+    return diagnostics
+}
+
+func ValidateLegacyImportedPackage(
+    expected text,
+    sources []model.SourceFile,
+) []diagnostic.Diagnostic {
+    var diagnostics []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
+    for source in sources {
+        if source.Package != expected {
+            diagnostics = append(diagnostics,
+                diagnostic.New("PACKAGE_MISMATCH", "module", Location(source.Path), source.Package))
+        }
+    }
+    return diagnostics
+}
+
+func Location(path fs.Path) text {
+    return [the normalized module-relative {path} location at line 1 column 1]
+}

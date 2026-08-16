@@ -1,0 +1,6 @@
+package main
+
+import "oi/compile-test/package-duplicate/pkg"
+
+func main() {
+}

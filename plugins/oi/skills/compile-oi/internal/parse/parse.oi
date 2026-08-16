@@ -3,8 +3,8 @@ package parse
 import "std/fs"
 import "oi/skills/compile-oi/internal/model"
 
-func Source(path fs.Path, content text) model.SourceFile {
-    return [the unique model.SourceFile represented by exact Oi 0.0.1 source {content} at {path},
+func Source(path fs.Path, content text, version model.LanguageVersion) model.SourceFile {
+    return [the unique model.SourceFile represented by exact source {content} at {path} under {version},
         containing only source-local facts: package and imports; every ordinary declaration with parameter,
         result, export, and complete structural type shapes for every Oi 0.0.1 type form, where every type node carries its
         zero-based element path plus an origin containing the exact introducer or named token, source path, line, column, location,
@@ -48,6 +48,10 @@ func Source(path fs.Path, content text) model.SourceFile {
         parse or type facts decidable without resolving another source, all with exact locations; main is absent
         from declarations; StaticFacts never contain INVALID_CHANNEL_CAPACITY, RUNTIME_HANDLE_PAYLOAD, RECEIVER_ALREADY_MOVED,
         ENDPOINT_SCOPE_ESCAPE, INVALID_TASK_OWNER, or UNMAPPED_EFFECT;
+        for Oi0_0_2 only, recognize the exact 0.0.2 grammar additions, but emit at most the first deterministic bootstrap capability
+        fact COMPILER_COLLECTION_UNAVAILABLE in phase type at the canonical first map or set token with exact token detail, or
+        COMPILER_DERIVATION_UNAVAILABLE in phase type at the canonical first derive token with detail derive; emit neither for
+        Oi0_0_1, and do not misclassify a recognized 0.0.2 collection as UNSUPPORTED_TYPE;
         duplicate, name, call, conversion, handle, transfer-target, transfer-durability, task-intrinsic, receiver-parameter, affine-flow,
         phase, authority, and shard resolution
         are not performed here; an argument is unknown with no producer only when it is an untyped literal whose

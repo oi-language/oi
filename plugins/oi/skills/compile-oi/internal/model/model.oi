@@ -2,6 +2,37 @@ package model
 
 import "std/fs"
 
+type LanguageVersion enum {
+    Oi0_0_1
+    Oi0_0_2
+}
+
+type SourceDirective struct {
+    Path fs.Path
+    Location text
+    Order int
+}
+
+type ModuleManifest struct {
+    Root fs.Path
+    Path fs.Path
+    Module text
+    Version LanguageVersion
+    Sources []SourceDirective
+}
+
+type SourceIdentity struct {
+    Path fs.Path
+    Bytes int
+    Characters int
+    SHA256 text
+}
+
+type LogicalSource struct {
+    Identity SourceIdentity
+    Content text
+}
+
 type DeclarationKind enum {
     Const
     Type

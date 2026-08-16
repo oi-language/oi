@@ -1,0 +1,16 @@
+package main
+
+import (
+    "oi/compile-test/graph-budget/d0"
+    "oi/compile-test/graph-budget/d1"
+    "oi/compile-test/graph-budget/d2"
+    "oi/compile-test/graph-budget/d3"
+    "oi/compile-test/graph-budget/d4"
+    "oi/compile-test/graph-budget/d5"
+    "oi/compile-test/graph-budget/d6"
+    "oi/compile-test/graph-budget/d7"
+    "oi/compile-test/graph-budget/d8"
+)
+
+func main() {
+}

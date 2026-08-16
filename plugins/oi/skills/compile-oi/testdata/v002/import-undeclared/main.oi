@@ -1,0 +1,6 @@
+package main
+
+import "oi/compile-test/import-undeclared/dep"
+
+func main() {
+}

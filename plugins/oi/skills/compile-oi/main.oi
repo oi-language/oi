@@ -10,5 +10,6 @@ effect Reply(value report.CompileReport) unit {
 }
 
 func main(target fs.Path, available []text) {
-    Reply(compile.Validate(target, available))
+    var result report.CompileReport = compile.Validate(target, available)
+    Reply(result)
 }

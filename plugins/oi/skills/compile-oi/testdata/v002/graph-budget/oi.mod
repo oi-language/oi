@@ -1,0 +1,12 @@
+module oi/compile-test/graph-budget
+oi 0.0.2
+source d0/d0.oi
+source d1/d1.oi
+source d2/d2.oi
+source d3/d3.oi
+source d4/d4.oi
+source d5/d5.oi
+source d6/d6.oi
+source d7/d7.oi
+source d8/d8.oi
+source main.oi

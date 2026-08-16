@@ -2,34 +2,9 @@ package compile
 
 import "std/diagnostic"
 import "std/fs"
+import "oi/skills/compile-oi/internal/load"
 import "oi/skills/compile-oi/internal/model"
-import "oi/skills/compile-oi/internal/parse"
 import "oi/skills/compile-oi/internal/report"
-
-type Module struct {
-    Root fs.Path
-    Path text
-    Version text
-}
-
-type ModuleProbe struct {
-    Module Module?
-    Diagnostics []diagnostic.Diagnostic
-}
-
-type TargetRead struct {
-    Directory fs.Path
-    Paths []fs.Path
-    Sources []model.SourceFile
-    Diagnostics []diagnostic.Diagnostic
-}
-
-type ImportTarget struct {
-    Directory fs.Path
-    Package text
-    Standard bool
-    Outside bool
-}
 
 type ResolvedType struct {
     Found bool
@@ -110,22 +85,11 @@ type AuthorityViolationKey struct {
     Authority text
 }
 
-type Graph struct {
-    Module Module?
-    RootPaths []fs.Path
-    Sources []model.SourceFile
-    ParseDiagnostics []diagnostic.Diagnostic
-    ModuleDiagnostics []diagnostic.Diagnostic
-    PackageDiagnostics []diagnostic.Diagnostic
-    VisitedPackages []fs.Path
-    ManifestClosure []text
-}
-
 func Validate(target fs.Path, available []text) report.CompileReport {
-    var graph Graph = LoadGraph(target)
-    var diagnostics []diagnostic.Diagnostic = graph.ParseDiagnostics
+    var graph load.Graph = load.LoadGraph(target)
+    var diagnostics []diagnostic.Diagnostic = graph.ModuleDiagnostics
     if len(diagnostics) == 0 {
-        diagnostics = graph.ModuleDiagnostics
+        diagnostics = graph.ParseDiagnostics
     }
     if len(diagnostics) == 0 {
         diagnostics = graph.PackageDiagnostics
@@ -142,190 +106,32 @@ func Validate(target fs.Path, available []text) report.CompileReport {
     if len(diagnostics) == 0 {
         diagnostics = ValidateShardUse(graph, reachable)
     }
-    var module text? = ModulePath(graph.Module)
+    var languageVersion text? = LanguageVersionText(graph.Manifest)
+    var module text? = ManifestModule(graph.Manifest)
     if len(diagnostics) == 0 {
-        return report.Pass(module, len(graph.Sources), authorities, shards)
-    }
-    return report.Fail(module, len(graph.Sources), authorities, shards, diagnostics)
-}
-
-func LoadGraph(target fs.Path) Graph {
-    var root TargetRead = ReadTarget(target)
-    var graph Graph = Graph{
-        Module: none,
-        RootPaths: root.Paths,
-        Sources: root.Sources,
-        ParseDiagnostics: root.Diagnostics,
-        ModuleDiagnostics: []diagnostic.Diagnostic{},
-        PackageDiagnostics: []diagnostic.Diagnostic{},
-        VisitedPackages: []fs.Path{root.Directory},
-        ManifestClosure: []text{},
-    }
-    if len(graph.ParseDiagnostics) != 0 {
-        return graph
-    }
-    var probe ModuleProbe = FindModule(root.Directory)
-    graph.Module = probe.Module
-    graph.ModuleDiagnostics = probe.Diagnostics
-    if len(graph.ModuleDiagnostics) != 0 {
-        return graph
-    }
-    graph.PackageDiagnostics = AppendDiagnostics(
-        graph.PackageDiagnostics,
-        ValidateRootPackages(graph.RootPaths, graph.Sources),
-    )
-    if len(graph.PackageDiagnostics) != 0 {
-        graph.ManifestClosure = ManifestClosure(graph.Sources)
-        return graph
-    }
-    graph = LoadImports(graph, root.Sources, []fs.Path{root.Directory})
-    graph.ManifestClosure = ManifestClosure(graph.Sources)
-    return graph
-}
-
-func ReadTarget(target fs.Path) TargetRead {
-    var observation fs.Observation = fs.Scan(target)
-    var directory fs.Path = TargetDirectory(target, observation)
-    var directoryState fs.Observation = fs.Scan(directory)
-    var paths []fs.Path = []fs.Path{}
-    if observation.Kind == fs.Kind.File && IsOiSource(target) {
-        paths = append(paths, target)
-    } else {
-        paths = PackageSourcePaths(directoryState)
-    }
-    var sources []model.SourceFile = ReadSources(paths)
-    return TargetRead{
-        Directory: directory,
-        Paths: paths,
-        Sources: sources,
-        Diagnostics: LocalDiagnostics(sources, "parse"),
-    }
-}
-
-func FindModule(directory fs.Path) ModuleProbe {
-    var candidates []fs.Path = AncestorDirectories(directory)
-    for candidate in candidates {
-        var modulePath fs.Path = Join(candidate, "oi.mod")
-        var state fs.Observation = fs.Scan(modulePath)
-        if state.Kind == fs.Kind.File {
-            return ParseModule(candidate, modulePath, fs.Read(modulePath))
-        }
-    }
-    return ModuleProbe{
-        Module: none,
-        Diagnostics: []diagnostic.Diagnostic{
-            diagnostic.New("MISSING_MODULE_FILE", "module", Location(directory), "nearest oi.mod"),
-        },
-    }
-}
-
-func LoadImports(graph Graph, sources []model.SourceFile, active []fs.Path) Graph {
-    for source in sources {
-        for importValue in source.Imports {
-            var target ImportTarget = ResolveImport(graph.Module, importValue)
-            if target.Outside {
-                graph.PackageDiagnostics = append(
-                    graph.PackageDiagnostics,
-                    diagnostic.New(
-                        "IMPORT_OUTSIDE_MODULE",
-                        "module",
-                        importValue.Location,
-                        importValue.Path,
-                    ),
-                )
-            } else if ContainsPath(active, target.Directory) {
-                graph.PackageDiagnostics = append(
-                    graph.PackageDiagnostics,
-                    diagnostic.New(
-                        "CIRCULAR_IMPORT",
-                        "module",
-                        importValue.Location,
-                        importValue.Path,
-                    ),
-                )
-            } else if !ContainsPath(graph.VisitedPackages, target.Directory) {
-                var observation fs.Observation = fs.Scan(target.Directory)
-                graph = LoadPackage(graph, target, observation, append(active, target.Directory))
-            }
-        }
-    }
-    return graph
-}
-
-func LoadPackage(
-    graph Graph,
-    target ImportTarget,
-    observation fs.Observation,
-    active []fs.Path,
-) Graph {
-    graph.VisitedPackages = append(graph.VisitedPackages, target.Directory)
-    if observation.Kind != fs.Kind.Directory {
-        graph.PackageDiagnostics = append(
-            graph.PackageDiagnostics,
-            diagnostic.New("MISSING_IMPORT", "module", Location(target.Directory), target.Package),
+        return report.Pass(
+            languageVersion,
+            module,
+            ReportSourceCount(graph),
+            graph.SourceCharacters,
+            graph.SourceIdentities,
+            authorities,
+            shards,
         )
-        return graph
     }
-    var boundary []diagnostic.Diagnostic = ObserveModuleBoundary(
-        graph.Module,
-        target,
-        observation,
+    return report.Fail(
+        languageVersion,
+        module,
+        ReportSourceCount(graph),
+        graph.SourceCharacters,
+        graph.SourceIdentities,
+        authorities,
+        shards,
+        diagnostics,
     )
-    graph.PackageDiagnostics = AppendDiagnostics(graph.PackageDiagnostics, boundary)
-    if len(boundary) != 0 {
-        return graph
-    }
-    var paths []fs.Path = PackageSourcePaths(observation)
-    var sources []model.SourceFile = ReadSources(paths)
-    graph.Sources = AppendSources(graph.Sources, sources)
-    var parseDiagnostics []diagnostic.Diagnostic = LocalDiagnostics(sources, "parse")
-    graph.ParseDiagnostics = AppendDiagnostics(graph.ParseDiagnostics, parseDiagnostics)
-    if len(parseDiagnostics) != 0 {
-        return graph
-    }
-    var packageDiagnostics []diagnostic.Diagnostic = ValidateImportedPackage(
-        target.Package,
-        sources,
-    )
-    graph.PackageDiagnostics = AppendDiagnostics(
-        graph.PackageDiagnostics,
-        packageDiagnostics,
-    )
-    if len(packageDiagnostics) != 0 {
-        return graph
-    }
-    graph = LoadImports(graph, sources, active)
-    return graph
 }
 
-func ObserveModuleBoundary(
-    module Module?,
-    target ImportTarget,
-    observation fs.Observation,
-) []diagnostic.Diagnostic {
-    var diagnostics []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
-    if target.Standard {
-        diagnostics = AppendDiagnostics(
-            diagnostics,
-            ValidateStandardBoundary(target, observation),
-        )
-    } else {
-        var boundaries []fs.Path = BoundaryDirectories(module, target.Directory)
-        for directory in boundaries {
-            var modulePath fs.Path = Join(directory, "oi.mod")
-            var moduleState fs.Observation = fs.Scan(modulePath)
-            if moduleState.Kind == fs.Kind.File {
-                diagnostics = AppendDiagnostics(
-                    diagnostics,
-                    CompareNestedModule(module, modulePath, fs.Read(modulePath)),
-                )
-            }
-        }
-    }
-    return diagnostics
-}
-
-func ValidateTypePhase(graph Graph) []diagnostic.Diagnostic {
+func ValidateTypePhase(graph load.Graph) []diagnostic.Diagnostic {
     var diagnostics []diagnostic.Diagnostic = LocalDiagnostics(graph.Sources, "type")
     diagnostics = AppendDiagnostics(diagnostics, ValidateDeclarations(graph.Sources))
     diagnostics = AppendDiagnostics(diagnostics, ValidateTypeReferences(graph.Sources))
@@ -1341,7 +1147,7 @@ func IsTaskIntrinsicHandleLocation(sources []model.SourceFile, location text) bo
     return false
 }
 
-func ValidateReceiverMoves(graph Graph) []diagnostic.Diagnostic {
+func ValidateReceiverMoves(graph load.Graph) []diagnostic.Diagnostic {
     var violations []ReceiverViolation = []ReceiverViolation{}
     for source in graph.Sources {
         var holders []ReceiverHolderState = []ReceiverHolderState{}
@@ -1364,7 +1170,7 @@ func ValidateReceiverMoves(graph Graph) []diagnostic.Diagnostic {
                     violations = InsertReceiverViolation(
                         violations,
                         ReceiverViolation{
-                            Path: ModuleRelativeSourcePath(graph.Module, source.Path),
+                            Path: load.ModuleRelativeSourcePath(graph.Manifest, source.Path),
                             Line: use.Position.Line,
                             Column: use.Position.Column,
                             Diagnostic: diagnostic.New(
@@ -1524,7 +1330,7 @@ func ConsumerParameterIsReceiver(
     return false
 }
 
-func ValidateEntries(graph Graph) []diagnostic.Diagnostic {
+func ValidateEntries(graph load.Graph) []diagnostic.Diagnostic {
     var diagnostics []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
     var entries []model.Entry = []model.Entry{}
     for source in graph.Sources {
@@ -1574,7 +1380,7 @@ func ValidateEntries(graph Graph) []diagnostic.Diagnostic {
 }
 
 func ValidateAuthorityUse(
-    graph Graph,
+    graph load.Graph,
     reachable []text,
     available []text,
 ) []diagnostic.Diagnostic {
@@ -1611,7 +1417,7 @@ func ValidateAuthorityUse(
     return LocatedDiagnostics(located)
 }
 
-func AuthorityContexts(graph Graph, available []text) []AuthorityContext {
+func AuthorityContexts(graph load.Graph, available []text) []AuthorityContext {
     var contexts []AuthorityContext = RootAuthorityContexts(graph, available)
     var changed bool = true
     for changed {
@@ -1660,7 +1466,7 @@ func AuthorityContexts(graph Graph, available []text) []AuthorityContext {
     return contexts
 }
 
-func RootAuthorityContexts(graph Graph, available []text) []AuthorityContext {
+func RootAuthorityContexts(graph load.Graph, available []text) []AuthorityContext {
     var contexts []AuthorityContext = []AuthorityContext{}
     for source in graph.Sources {
         if ContainsPath(graph.RootPaths, source.Path) && source.Package == "main" &&
@@ -1873,7 +1679,7 @@ func ContainsAuthorityViolationKey(
     return false
 }
 
-func ValidateShardUse(graph Graph, reachable []text) []diagnostic.Diagnostic {
+func ValidateShardUse(graph load.Graph, reachable []text) []diagnostic.Diagnostic {
     var diagnostics []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
     for source in graph.Sources {
         for shardUse in source.ShardUses {
@@ -1895,7 +1701,7 @@ func ValidateShardUse(graph Graph, reachable []text) []diagnostic.Diagnostic {
     return diagnostics
 }
 
-func ReachableCallers(graph Graph) []text {
+func ReachableCallers(graph load.Graph) []text {
     var roots []text = []text{}
     for source in graph.Sources {
         if ContainsPath(graph.RootPaths, source.Path) && source.Package == "main" {
@@ -1967,29 +1773,6 @@ func LocalDiagnostics(sources []model.SourceFile, phase text) []diagnostic.Diagn
         }
     }
     return diagnostics
-}
-
-func ReadSources(paths []fs.Path) []model.SourceFile {
-    var sources []model.SourceFile = []model.SourceFile{}
-    for path in paths {
-        var observation fs.Observation = fs.Scan(path)
-        if observation.Kind == fs.Kind.File {
-            sources = append(sources, parse.Source(path, fs.Read(path)))
-        }
-    }
-    return sources
-}
-
-func PackageSourcePaths(observation fs.Observation) []fs.Path {
-    var paths []fs.Path = []fs.Path{}
-    var entries []fs.Path = OrderedPaths(observation.Entries)
-    for path in entries {
-        var state fs.Observation = fs.Scan(path)
-        if state.Kind == fs.Kind.File && IsOiSource(path) {
-            paths = append(paths, path)
-        }
-    }
-    return paths
 }
 
 func AppendDiagnostics(
@@ -2604,101 +2387,6 @@ func EmptyTypeShape() model.TypeShape {
     return BuiltinTypeShape("")
 }
 
-func AncestorDirectories(directory fs.Path) []fs.Path {
-    return [the exact lexical sequence from {directory} through its filesystem root];
-}
-
-func BoundaryDirectories(module Module?, directory fs.Path) []fs.Path {
-    return [the exact lexical directories from {directory} up to but excluding {module}'s selected root];
-}
-
-func OrderedPaths(paths []fs.Path) []fs.Path {
-    return [the same distinct {paths} sorted by exact normalized UTF-8 path bytes];
-}
-
-func TargetDirectory(target fs.Path, observation fs.Observation) fs.Path {
-    return [the package directory selected by {target} and its exact {observation}];
-}
-
-func Join(directory fs.Path, name text) fs.Path {
-    return [the normalized child path named {name} within {directory}];
-}
-
-func IsOiSource(path fs.Path) bool {
-    return [whether the final path segment of {path} ends exactly in .oi];
-}
-
-func ParseModule(root fs.Path, path fs.Path, content text) ModuleProbe {
-    return [the ModuleProbe from exact oi.mod {content} at {path}, containing Module root {root} for one
-        canonical module directive and exact 0.0.1, otherwise every safely decidable module diagnostic];
-}
-
-func ResolveImport(module Module?, importValue model.Import) ImportTarget {
-    return [the normalized package directory, package name, standard flag, and outside-module flag for
-        unresolved import {importValue.Path} under {module}, without claiming any filesystem kind];
-}
-
-func CompareNestedModule(
-    module Module?,
-    path fs.Path,
-    content text,
-) []diagnostic.Diagnostic {
-    return [the VERSION_CONFLICT diagnostics established by nested oi.mod {content} at {path} against
-        exact selected {module}, including malformed or non-0.0.1 nested version evidence];
-}
-
-func ValidateStandardBoundary(
-    target ImportTarget,
-    observation fs.Observation,
-) []diagnostic.Diagnostic {
-    return [the VERSION_CONFLICT diagnostics when standard package {target} and its exact {observation}
-        are outside the selected Oi 0.0.1 standard-library root];
-}
-
-func ValidateRootPackages(
-    rootPaths []fs.Path,
-    sources []model.SourceFile,
-) []diagnostic.Diagnostic {
-    var diagnostics []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
-    for source in sources {
-        if ContainsPath(rootPaths, source.Path) && source.Package != "main" {
-            diagnostics = append(
-                diagnostics,
-                diagnostic.New("PACKAGE_MISMATCH", "module", Location(source.Path), source.Package),
-            )
-        }
-    }
-    return diagnostics
-}
-
-func ValidateImportedPackage(
-    expected text,
-    sources []model.SourceFile,
-) []diagnostic.Diagnostic {
-    var diagnostics []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
-    for source in sources {
-        if source.Package != expected {
-            diagnostics = append(
-                diagnostics,
-                diagnostic.New("PACKAGE_MISMATCH", "module", Location(source.Path), source.Package),
-            )
-        }
-    }
-    return diagnostics
-}
-
-func ManifestClosure(sources []model.SourceFile) []text {
-    var closure []text = []text{}
-    for source in sources {
-        for path in source.RequiredShards {
-            if !ContainsText(closure, path) {
-                closure = append(closure, path)
-            }
-        }
-    }
-    return closure
-}
-
 func DeclarationKey(packageName text, name text) text {
     return [the unambiguous declaration key for package {packageName} and name {name}];
 }
@@ -2753,20 +2441,24 @@ func IndexesAfterFirst(entries []model.Entry) []int {
     return [the integer indexes 1 through len of {entries} minus one in ascending order];
 }
 
-func ModulePath(module Module?) text? {
-    return [the module path in {module}, or none when {module} is none];
+func LanguageVersionText(manifest model.ModuleManifest?) text? {
+    return ["0.0.1" when {manifest} is present with Oi0_0_1, "0.0.2" when present with Oi0_0_2,
+        otherwise none]
+}
+
+func ReportSourceCount(graph load.Graph) int {
+    return [len of {graph.SourceIdentities} for a selected Oi0_0_2 manifest, otherwise len of {graph.Sources}]
+}
+
+func ManifestModule(manifest model.ModuleManifest?) text? {
+    return [the exact Module field when {manifest} is present, otherwise none]
 }
 
 func Location(path fs.Path) text {
     return [the normalized module-relative {path} location at line 1 column 1];
 }
 
-func ModuleRelativeSourcePath(module Module?, path fs.Path) text {
-    return [the exact normalized module-relative UTF-8 path text for {path} under selected {module},
-        or the exact normalized path text when {module} is none];
-}
-
-func RootLocation(graph Graph) text {
+func RootLocation(graph load.Graph) text {
     if len(graph.RootPaths) == 0 {
         return "main.oi:1:1"
     }

@@ -1,6 +1,7 @@
 package report
 
 import "std/diagnostic"
+import "oi/skills/compile-oi/internal/model"
 
 type Status enum {
     Pass
@@ -9,18 +10,32 @@ type Status enum {
 
 type CompileReport struct {
     Status Status
+    LanguageVersion text?
     Module text?
     SourceCount int
+    SourceCharacters int
+    Sources []model.SourceIdentity
     Authorities []text
     Shards []text
     Diagnostics []diagnostic.Diagnostic
 }
 
-func Pass(module text?, sourceCount int, authorities []text, shards []text) CompileReport {
+func Pass(
+    languageVersion text?,
+    module text?,
+    sourceCount int,
+    sourceCharacters int,
+    sources []model.SourceIdentity,
+    authorities []text,
+    shards []text,
+) CompileReport {
     return CompileReport{
         Status: Status.Pass,
+        LanguageVersion: languageVersion,
         Module: module,
         SourceCount: sourceCount,
+        SourceCharacters: sourceCharacters,
+        Sources: sources,
         Authorities: authorities,
         Shards: shards,
         Diagnostics: []diagnostic.Diagnostic{},
@@ -28,16 +43,22 @@ func Pass(module text?, sourceCount int, authorities []text, shards []text) Comp
 }
 
 func Fail(
+    languageVersion text?,
     module text?,
     sourceCount int,
+    sourceCharacters int,
+    sources []model.SourceIdentity,
     authorities []text,
     shards []text,
     diagnostics []diagnostic.Diagnostic,
 ) CompileReport {
     return CompileReport{
         Status: Status.Fail,
+        LanguageVersion: languageVersion,
         Module: module,
         SourceCount: sourceCount,
+        SourceCharacters: sourceCharacters,
+        Sources: sources,
         Authorities: authorities,
         Shards: shards,
         Diagnostics: diagnostics,
