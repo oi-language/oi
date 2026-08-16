@@ -105,9 +105,9 @@ Element=[Expression,":"],Expression; SemanticExpr="[",SemanticContent,"]";
 
 Postfix precedes unary; left-associative binary precedence: `* / %`, `+ -`, comparisons/`~=`, `&&`, `||`. Composite positions are slice/set values, map key:value, or named struct fields once. A later equal map/set item fails `DUPLICATE_KEY` there. `none` needs optional target.
 
-One semantic expression is one typed judgment/contract/`~=` predicate. Generation permits primitive, enum, bounded named/optional/fixed struct; nested slice/map/set is static `UNBOUNDED_SEMANTIC_RESULT` at `[`. Inputs: interpolations only; no ambient context or hidden control/retry/effect/dispatch/handoff/stop. Uncertainty: `AMBIGUOUS_SEMANTIC_VALUE`/`AMBIGUOUS_SEMANTIC_MATCH`.
+`SemanticExpr`=one typed judgment/contract/`~=`; inputs=interpolations, no ambient/control/effect. Recursive result=scalar/enum/optional/fixed struct; else `UNBOUNDED_SEMANTIC_RESULT/type`@judgment `[`/exact target-type spelling. Ambiguity=`AMBIGUOUS_SEMANTIC_{VALUE|MATCH}`.
 
-`derive [...]` requires explicit target, never `:=`, and uniquely transforms interpolated typed inputs under the snapshot into any handle-free value. It permits parse/decode/normalize/group/sort/canonical render, not policy choice or effect/control/retry/dispatch/handoff/stop. Non-unique is runtime `NONDETERMINISTIC_DERIVATION`; contracts/`~=` stay bounded.
+`derive [...]`=unique interpolation→handle-free aggregate target. Type: absent/`:=`→`DERIVATION_TARGET_REQUIRED@derive/derive`; DERIVATION_EFFECT_FORBIDDEN/DERIVATION_CONTEXT_FORBIDDEN/DERIVATION_CONTROL_FORBIDDEN/DERIVATION_HANDLE_FORBIDDEN Location=first effect name/call, ambient phrase token, retry/control/dispatch/loop-control/handoff/stop/question token, handle token/earlier dependency; Detail=exact qualified spelling/phrase/token/constructor in order.
 
 ```ebnf
 Statement=Declaration|Assignment|IfStmt|SwitchStmt|ForStmt|SelectStmt|ReturnStmt|BreakStmt|ContinueStmt|StopStmt|HandoffStmt|ExpressionStmt;

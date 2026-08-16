@@ -1,0 +1,10 @@
+package main
+
+func SelectLabel(source text) text {
+    var label text = [select one label determined by {source}]
+    return label
+}
+
+func main(source text) {
+    SelectLabel(source)
+}

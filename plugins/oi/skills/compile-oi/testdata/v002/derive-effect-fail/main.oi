@@ -1,0 +1,15 @@
+package main
+
+effect Lookup(key text) text {
+    uses workspace.read
+    contract [read the value for {key}]
+}
+
+func Resolve(keys []text) []text {
+    var values []text = derive [call Lookup for each {keys} item and return the values]
+    return values
+}
+
+func main(keys []text) {
+    Resolve(keys)
+}

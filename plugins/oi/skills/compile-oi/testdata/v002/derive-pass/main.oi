@@ -5,16 +5,11 @@ type Decision struct {
     Score int
 }
 
-func DeriveDecisions(scores map[text]int) []Decision {
+func Decisions(scores map[text]int) []Decision {
     var decisions []Decision = derive [make one Decision for each {scores} entry in canonical key order]
     return decisions
 }
 
-effect Reply(value []Decision) unit {
-    uses caller.reply
-    contract [deliver {value} exactly once to the caller]
-}
-
 func main(scores map[text]int) {
-    Reply(DeriveDecisions(scores))
+    Decisions(scores)
 }

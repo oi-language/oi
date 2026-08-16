@@ -134,6 +134,7 @@ func Validate(target fs.Path, available []text) report.CompileReport {
 
 func ValidateTypePhase(graph load.Graph) []diagnostic.Diagnostic {
     var diagnostics []diagnostic.Diagnostic = LocalDiagnostics(graph.Sources, "type")
+    diagnostics = AppendDiagnostics(diagnostics, ValidateSemanticExpressions(graph.Sources))
     diagnostics = AppendDiagnostics(diagnostics, ValidateCollections(graph.Sources))
     diagnostics = AppendDiagnostics(diagnostics, ValidateDeclarations(graph.Sources))
     diagnostics = AppendDiagnostics(diagnostics, ValidateTypeReferences(graph.Sources))
@@ -146,6 +147,112 @@ func ValidateTypePhase(graph load.Graph) []diagnostic.Diagnostic {
     diagnostics = AppendDiagnostics(diagnostics, ValidateRuntimeHandles(graph.Sources))
     diagnostics = AppendDiagnostics(diagnostics, ValidateEntries(graph))
     return diagnostics
+}
+
+func ValidateSemanticExpressions(sources []model.SourceFile) []diagnostic.Diagnostic {
+    var located []LocatedDiagnostic = []LocatedDiagnostic{}
+    for source in sources {
+        for judgment in source.Judgments {
+            if judgment.HasTarget && !typecheck.BoundedSemanticResult(
+                sources,
+                source,
+                judgment.Target,
+            ) {
+                located = InsertLocatedDiagnostic(
+                    located,
+                    LocatedDiagnostic{
+                        Position: judgment.Position,
+                        Diagnostic: diagnostic.New(
+                            "UNBOUNDED_SEMANTIC_RESULT",
+                            "type",
+                            judgment.Position.Location,
+                            judgment.TargetSource,
+                        ),
+                    },
+                )
+            }
+        }
+        for derivation in source.Derivations {
+            located = AppendLocatedDiagnostics(
+                located,
+                ValidateDerivation(sources, source, derivation),
+            )
+        }
+    }
+    return LocatedDiagnostics(located)
+}
+
+func ValidateDerivation(
+    sources []model.SourceFile,
+    source model.SourceFile,
+    derivation model.DerivationExpression,
+) []LocatedDiagnostic {
+    var diagnostics []LocatedDiagnostic = []LocatedDiagnostic{}
+    if !derivation.HasTarget {
+        diagnostics = InsertLocatedDiagnostic(
+            diagnostics,
+            LocatedDiagnostic{
+                Position: derivation.Position,
+                Diagnostic: diagnostic.New(
+                    "DERIVATION_TARGET_REQUIRED",
+                    "type",
+                    derivation.Position.Location,
+                    "derive",
+                ),
+            },
+        )
+    } else {
+        var target model.TypeShape = UnderlyingTypeShape(
+            sources,
+            source,
+            derivation.Target,
+            []text{},
+        )
+        var handle RuntimeHandleSelection = FirstRuntimeHandle(target)
+        if handle.Found {
+            diagnostics = InsertLocatedDiagnostic(
+                diagnostics,
+                LocatedDiagnostic{
+                    Position: handle.Origin.Position,
+                    Diagnostic: diagnostic.New(
+                        "DERIVATION_HANDLE_FORBIDDEN",
+                        "type",
+                        handle.Origin.Position.Location,
+                        handle.Origin.Token,
+                    ),
+                },
+            )
+        }
+    }
+    for dependency in derivation.Dependencies {
+        diagnostics = InsertLocatedDiagnostic(
+            diagnostics,
+            DerivationDependencyDiagnostic(dependency),
+        )
+    }
+    return diagnostics
+}
+
+func DerivationDependencyDiagnostic(
+    dependency model.DerivationDependency,
+) LocatedDiagnostic {
+    var category text = "DERIVATION_CONTROL_FORBIDDEN"
+    if dependency.Kind == model.DerivationDependencyKind.Effect {
+        category = "DERIVATION_EFFECT_FORBIDDEN"
+    } else if dependency.Kind == model.DerivationDependencyKind.AmbientContext {
+        category = "DERIVATION_CONTEXT_FORBIDDEN"
+    } else if dependency.Kind == model.DerivationDependencyKind.RuntimeHandle {
+        category = "DERIVATION_HANDLE_FORBIDDEN"
+    }
+    return LocatedDiagnostic{
+        Position: dependency.Position,
+        Diagnostic: diagnostic.New(
+            category,
+            "type",
+            dependency.Position.Location,
+            dependency.Detail,
+        ),
+    }
 }
 
 func ValidateCollections(sources []model.SourceFile) []diagnostic.Diagnostic {

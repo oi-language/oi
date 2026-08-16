@@ -149,6 +149,40 @@ type Argument struct {
     Location text
 }
 
+type JudgmentExpression struct {
+    TargetSource text
+    Target TypeShape
+    HasTarget bool
+    Position SourcePosition
+}
+
+type DerivationDependencyKind enum {
+    Effect
+    AmbientContext
+    Control
+    RuntimeHandle
+}
+
+type DerivationDependency struct {
+    Kind DerivationDependencyKind
+    Detail text
+    Position SourcePosition
+}
+
+type DerivationInput struct {
+    Value Argument
+    Position SourcePosition
+}
+
+type DerivationExpression struct {
+    TargetSource text
+    Target TypeShape
+    HasTarget bool
+    Inputs []DerivationInput
+    Dependencies []DerivationDependency
+    Position SourcePosition
+}
+
 type CanonicalOrderKind enum {
     Unstable
     Bool
@@ -368,6 +402,8 @@ type SourceFile struct {
     Declarations []Declaration
     Entries []Entry
     Calls []CallSite
+    Judgments []JudgmentExpression
+    Derivations []DerivationExpression
     CollectionTypes []CollectionTypeUse
     CollectionCalls []CallSite
     CollectionIndexes []CollectionIndexUse

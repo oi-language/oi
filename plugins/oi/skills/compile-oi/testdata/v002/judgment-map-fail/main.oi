@@ -1,0 +1,10 @@
+package main
+
+func Index(source text) map[text]int {
+    var index map[text]int = [build one score for each item in {source}]
+    return index
+}
+
+func main(source text) {
+    Index(source)
+}

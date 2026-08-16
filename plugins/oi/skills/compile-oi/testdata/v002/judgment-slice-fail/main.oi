@@ -1,0 +1,10 @@
+package main
+
+func Summarize(source text) []text {
+    var summaries []text = [summarize {source} into ordered items]
+    return summaries
+}
+
+func main(source text) {
+    Summarize(source)
+}

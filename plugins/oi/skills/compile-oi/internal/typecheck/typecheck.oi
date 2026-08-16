@@ -181,6 +181,62 @@ func IterationArityDetail(collection CollectionSelection, count int) text {
         replacing N only with the canonical decimal count]
 }
 
+func BoundedSemanticResult(
+    sources []model.SourceFile,
+    source model.SourceFile,
+    shape model.TypeShape,
+) bool {
+    return BoundedSemanticResultFrom(sources, source, shape, []text{})
+}
+
+func BoundedSemanticResultFrom(
+    sources []model.SourceFile,
+    source model.SourceFile,
+    shape model.TypeShape,
+    visited []text,
+) bool {
+    if shape.Kind == model.TypeShapeKind.Builtin {
+        return shape.Name == "bool" || shape.Name == "int" || shape.Name == "text" ||
+            shape.Name == "unit"
+    }
+    if shape.Kind == model.TypeShapeKind.Enum {
+        return true
+    }
+    if shape.Kind == model.TypeShapeKind.Optional && len(shape.Elements) == 1 {
+        return BoundedSemanticResultFrom(sources, source, shape.Elements[0], visited)
+    }
+    if shape.Kind == model.TypeShapeKind.Struct {
+        for field in shape.Elements {
+            if !BoundedSemanticResultFrom(sources, source, field, visited) {
+                return false
+            }
+        }
+        return true
+    }
+    if shape.Kind != model.TypeShapeKind.Named {
+        return false
+    }
+    var identity text = QualifiedTypeName(source, shape.Name)
+    if ContainsText(visited, identity) {
+        return false
+    }
+    for candidate in sources {
+        for declaration in candidate.Declarations {
+            if declaration.Kind == model.DeclarationKind.Type &&
+                DeclarationKey(candidate.Package, declaration.Name) == identity &&
+                declaration.HasUnderlying {
+                return BoundedSemanticResultFrom(
+                    sources,
+                    candidate,
+                    declaration.Underlying,
+                    append(visited, identity),
+                )
+            }
+        }
+    }
+    return false
+}
+
 func StableOrder(
     kind model.CanonicalOrderKind,
     identity text,

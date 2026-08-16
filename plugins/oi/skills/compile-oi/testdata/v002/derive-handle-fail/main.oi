@@ -1,0 +1,14 @@
+package main
+
+func Work(value text) text {
+    return value
+}
+
+func Build(values []text) []task[text] {
+    var tasks []task[text] = derive [create one Work task handle for each {values} item]
+    return tasks
+}
+
+func main(values []text) {
+    Build(values)
+}

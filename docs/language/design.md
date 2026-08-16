@@ -23,6 +23,8 @@ Oi therefore has exact primitive values, slices, optionals, structs, enums, name
 
 Natural-language judgment remains deliberately narrow. A semantic expression produces or judges one contextually typed value. It cannot conceal sequencing, a branch, a loop, retry, an effect, dispatch, handoff, or stop. This preserves the Agent's useful judgment without turning prose into an invisible control plane.
 
+Aggregate construction is a distinct derivation. `derive` requires an explicit handle-free target and uses only interpolated typed snapshots for a unique structural transformation; ambient context, policy choice, effects, control, and runtime handles are rejected rather than hidden in prose.
+
 ## Why `oi` modifies a call
 
 Subagent work is still a call to a named, typed ordinary function. Prefixing that call with `oi` changes only its execution mode: `oi Review(change)` launches an attached task, while `await oi Review(change)` launches and waits. Optional assignment exposes the resulting `task[T]` handle.

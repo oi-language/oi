@@ -1,0 +1,10 @@
+package main
+
+func Recall(keys []text) []text {
+    var values []text = derive [use the parent conversation and {keys} to reconstruct the values]
+    return values
+}
+
+func main(keys []text) {
+    Recall(keys)
+}

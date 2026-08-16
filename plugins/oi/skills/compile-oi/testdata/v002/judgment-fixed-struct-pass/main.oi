@@ -1,0 +1,25 @@
+package main
+
+type Verdict enum {
+    Accept
+    Reject
+}
+
+type Evidence struct {
+    Summary text
+    Score int?
+}
+
+type Review struct {
+    Verdict Verdict
+    Evidence Evidence
+}
+
+func Judge(source text) Review {
+    var review Review = [judge {source} and return one fixed review]
+    return review
+}
+
+func main(source text) {
+    Judge(source)
+}

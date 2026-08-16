@@ -15,6 +15,18 @@ func Source(path fs.Path, content text, version model.LanguageVersion) model.Sou
         argument count, known argument shapes
         or the producer call ID for an exact source-local value flow, result use, and contextual result
         target shape or target producer-call ID, plus ordered task, await, capture, legacy slice-index, or field result transforms;
+        for Oi0_0_2, every semantic expression outside derive emits one JudgmentExpression, and every derive semantic expression emits one
+        distinct DerivationExpression, never a derive flag on a judgment; each carries the exact contextual target type spelling and complete
+        target TypeShape when fixed, HasTarget false only when no explicit target exists, and the exact `[` or derive SourcePosition;
+        each DerivationExpression carries its source-ordered interpolations as DerivationInput values with exact position and known shape or
+        producer flow, and no ambient value appears in Inputs;
+        each DerivationExpression carries source-ordered forbidden dependencies only: Effect at the first referenced effect name or call token
+        with its exact qualified source spelling, AmbientContext at the first phrase token with the exact matched phrase, Control at the first
+        retry, control, dispatch, loop-control, handoff, stop, or question token with that exact token, and RuntimeHandle at the first task,
+        channel, sender, receiver, endpoint, or other handle dependency token with its exact constructor spelling; ordinary interpolated immutable
+        typed inputs emit no dependency, while a runtime-handle interpolation does; ambient includes parent conversation, history, memory,
+        unpassed project facts, clock, randomness, and host order; each lexical derive owner emits runtime/derivation.md once in shard uses and
+        RequiredShards contains that path once; Oi0_0_1 emits empty JudgmentExpression and DerivationExpression collections;
         for Oi0_0_2, map shapes contain key then value and set shapes contain element; emit every map/set type occurrence as one
         CollectionTypeUse with exact kind, member shape, exact member type spelling, and its first-token position; unqualified collection
         builtins `has`, `put`, `add`, `remove`, and map/set `len` emit CollectionCalls rather than ordinary Calls, preserving complete
@@ -60,9 +72,8 @@ func Source(path fs.Path, content text, version model.LanguageVersion) model.Sou
         ENDPOINT_SCOPE_ESCAPE, INVALID_TASK_OWNER, or UNMAPPED_EFFECT;
         for Oi0_0_1, an imperative semantic block emits IMPERATIVE_SEMANTIC_BLOCK in phase parse at its first imperative
         semantic item, with that first token as Detail, matching the exact frozen 0.0.1 classification;
-        for Oi0_0_2 only, recognize the exact map/set, collection literal/builtin/index, and collection iteration grammar above without any
-        COMPILER_COLLECTION_UNAVAILABLE fact; still emit at most the first deterministic COMPILER_DERIVATION_UNAVAILABLE type fact at the
-        canonical first derive token with detail derive; emit neither capability fact for Oi0_0_1, whose exact unsupported map/set spelling
+        for Oi0_0_2 only, recognize the exact map/set, collection literal/builtin/index, collection iteration, judgment, and derive grammar above
+        without any compiler capability-unavailable fact; emit no such fact for Oi0_0_1, whose exact unsupported map/set spelling
         remains UNSUPPORTED_TYPE and emits no 0.0.2 collection fact;
         duplicate, name, call, conversion, handle, transfer-target, transfer-durability, task-intrinsic, receiver-parameter, affine-flow,
         phase, authority, and shard resolution
