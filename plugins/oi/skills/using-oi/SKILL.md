@@ -5,13 +5,13 @@ description: Use when an Agent needs to load, validate, interpret, or directly e
 
 # Using Oi
 
-This bootstrap adapter contains no Oi behavior, grammar, algorithm, or inferred shard dependency.
+No Oi grammar, receipt construction, or dependency lives here.
 
-1. Find the nearest `oi.mod`, resolve its exact `oi` version, and load that version's complete `execution.md` exactly once.
-2. For exactly `snapshot-metadata`, `version-discovery`, or `manifest-inspection` with no `.oi` interpretation, stop without source parsing.
-3. Otherwise load the reachable project/standard-library `.oi` graph using that same read.
-4. From parsed nodes, resolved standard calls, imports, and run mode, compute manifest-trigger union and declared transitive closure. Load runtime files in manifest order and standard packages in UTF-8 path-byte order; report the manifest's missing-file categories.
-5. Statically validate the lowercase entry, bind typed caller inputs in declaration order, map reachable effects/authorities, and host-invoke `main`.
-6. Expose only concrete payloads from explicitly mapped reply effects.
+1. Target may be file or directory: search starts at the directory itself or file's parent. From nearest `oi.mod`, load exact installed `execution.md` once. Unsupported reports `UNSUPPORTED_VERSION`, installed snapshots, and upgrader; never default/combine/reinterpret/use packaging version.
+2. Only exact `snapshot-metadata`/`version-discovery`/`manifest-inspection` may stop without `.oi` interpretation. Keep 0.0.1 discovery. For every manifest-only 0.0.2 read, acquire content+byte/character/SHA in its first monotonic pass and close true EOF; never reread.
+3. Close triggers from parsed nodes, calls/imports, and run mode. Load shards by row and std by UTF-8 path bytes; report exact failures.
+4. Validate lowercase entry, bind typed inputs in declaration order, and map reachable effects/authorities.
+5. Fresh Agent directly invokes validated `main`, never an interface/inspection substitute. 0.0.2 seals admission first; 0.0.1 stays unchanged.
+6. Typed payloads use mapped reply effects. A recognized 0.0.2 invocation completes only when every shard-required receipt field is delivered separately; otherwise report missing fields.
 
-An absent exact version reports `UNSUPPORTED_VERSION`, exact snapshot names under this skill's `versions/`, and explicit upgrader, then stops. Never read the base spec twice, invoke `main` as an Oi function, invent an entry return, treat reply names as built-ins, copy algorithms, infer shard dependencies from prose, or treat plugin packaging version as a language snapshot. Runtime-token execution remains the runtime plan's work.
+Never read base twice, call `main` as Oi, invent return/Reply, copy behavior here, infer from prose, or expose ambient context.
