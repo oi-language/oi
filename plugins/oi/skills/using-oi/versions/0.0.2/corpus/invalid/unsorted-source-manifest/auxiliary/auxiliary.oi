@@ -1,0 +1,4 @@
+package auxiliary
+
+func Ready() {
+}
