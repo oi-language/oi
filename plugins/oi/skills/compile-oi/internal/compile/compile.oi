@@ -134,10 +134,10 @@ func Validate(target fs.Path, available []text) report.CompileReport {
 
 func ValidateTypePhase(graph load.Graph) []diagnostic.Diagnostic {
     var diagnostics []diagnostic.Diagnostic = LocalDiagnostics(graph.Sources, "type")
+    diagnostics = AppendDiagnostics(diagnostics, ValidateSemanticExpressions(graph.Sources))
     diagnostics = AppendDiagnostics(diagnostics, ValidateCollections(graph.Sources))
     diagnostics = AppendDiagnostics(diagnostics, ValidateDeclarations(graph.Sources))
     diagnostics = AppendDiagnostics(diagnostics, ValidateTypeReferences(graph.Sources))
-    diagnostics = AppendDiagnostics(diagnostics, ValidateSemanticExpressions(graph.Sources))
     diagnostics = AppendDiagnostics(diagnostics, ValidateTransfers(graph.Sources))
     diagnostics = AppendDiagnostics(diagnostics, ValidateTaskIntrinsics(graph.Sources))
     diagnostics = AppendDiagnostics(diagnostics, ValidateCalls(graph.Sources))

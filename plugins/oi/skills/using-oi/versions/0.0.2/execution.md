@@ -40,9 +40,9 @@ letter="A"…"Z"|"a"…"z"; digit="0"…"9";
 identifier=(letter|"_"),{letter|digit|"_"}; int_lit=digit,{digit};
 text_char=any UTF-8 scalar except quote, backslash, CR, LF;
 text_lit='"',{text_char|'\"'|'\\'|'\n'|'\t'},'"';
-SemanticItem=semantic_char|semantic_escape|Interpolation;
-semantic_char=any UTF-8 scalar except bracket, brace, backslash;
-semantic_escape='\['|'\]'|'\{'|'\}'|'\\';
+SItem=schar|sescape|Interpolation;
+schar=any UTF-8 scalar except bracket, brace, backslash;
+sescape='\['|'\]'|'\{'|'\}'|'\\';
 Interpolation="{",identifier,{".",identifier|"[",(identifier|int_lit),"]"},"}";
 terminator=";"|inserted_line_terminator; separator=","|terminator;
 binary_op="*"|"/"|"%"|"+"|"-"|"=="|"!="|"<"|"<="|">"|">="|"~="|"&&"|"||";
@@ -99,19 +99,20 @@ OiExpression="oi",CallExpression; AwaitExpression="await",(OiExpression|PrimaryE
 DetachExpr="detach",OiExpression; DeriveExpression="derive",SemanticExpr;
 ChannelExpr="channel","[",Type,"]","(",Expression,")";
 CompositeLit=Type,"{",[Element,{",",Element},[","]],"}";
-Element=[Expression,":"],Expression; SemanticExpr="[",SemanticItem,{SemanticItem},"]";
+Element=[Expression,":"],Expression; SemanticExpr="[",SItem,{SItem},"]";
 ```
 
 Postfix precedes unary; left-associative binary precedence: `* / %`, `+ -`, comparisons/`~=`, `&&`, `||`. Composite positions are slice/set values, map key:value, or named struct fields once. A later equal map/set item fails `DUPLICATE_KEY` there. `none` needs optional target.
 
 SemanticExpr=one typed judgment; interpolation-only/no ambient/control/effect; recursive result=scalar/enum/optional/fixed-struct; ambiguity=AMBIGUOUS_SEMANTIC_{VALUE|MATCH}
-F=first token; E=exact source spelling; tuples(Category|Phase|Location|Detail):
+F=first token;E=exact source spelling;tuple(Category|Phase|Location|Detail):
+P(X,Y)=source-earliest present token among X,Y; absent loses;
 UNBOUNDED_SEMANTIC_RESULT|type|judgment [|E(target type)
 no explicit target/:=→(DERIVATION_TARGET_REQUIRED|type|derive|derive)
 DERIVATION_EFFECT_FORBIDDEN|type|F(referenced effect name/call)|E(qualified effect)
 DERIVATION_CONTEXT_FORBIDDEN|type|F(forbidden ambient/context phrase)|E(matched phrase)
 DERIVATION_CONTROL_FORBIDDEN|type|F(retry/control/dispatch/loop-control/handoff/stop/question)|E(offender)
-DERIVATION_HANDLE_FORBIDDEN|type|earlier(F(explicit target runtime-handle type),F(dependency handle))|E(handle constructor)
+DERIVATION_HANDLE_FORBIDDEN|type|P(F(explicit target runtime-handle type),F(dependency handle))|E(handle constructor)
 
 ```ebnf
 Statement=Declaration|Assignment|IfStmt|SwitchStmt|ForStmt|SelectStmt|ReturnStmt|BreakStmt|ContinueStmt|StopStmt|HandoffStmt|ExpressionStmt;

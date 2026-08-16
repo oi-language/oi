@@ -1,0 +1,6 @@
+package main
+
+func main(source text) {
+    var summaries []text = [summarize {source} into ordered items]
+    var missing Missing = [judge {source}]
+}
