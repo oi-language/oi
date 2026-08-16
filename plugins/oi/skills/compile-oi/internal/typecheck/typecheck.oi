@@ -1,0 +1,265 @@
+package typecheck
+
+import "oi/skills/compile-oi/internal/model"
+
+type CollectionSelection struct {
+    Found bool
+    Kind model.TypeShapeKind
+    Surface model.TypeShape
+    Key model.TypeShape
+    Value model.TypeShape
+}
+
+type BuiltinSignature struct {
+    Found bool
+    Arguments []model.TypeShape
+    Result model.TypeShape
+}
+
+func CanonicalOrder(
+    sources []model.SourceFile,
+    source model.SourceFile,
+    shape model.TypeShape,
+) model.CanonicalOrderIdentity {
+    return CanonicalOrderFrom(sources, source, shape, []text{})
+}
+
+func CanonicalOrderFrom(
+    sources []model.SourceFile,
+    source model.SourceFile,
+    shape model.TypeShape,
+    visited []text,
+) model.CanonicalOrderIdentity {
+    if shape.Kind == model.TypeShapeKind.Builtin {
+        if shape.Name == "bool" {
+            return StableOrder(model.CanonicalOrderKind.Bool, "bool")
+        }
+        if shape.Name == "int" {
+            return StableOrder(model.CanonicalOrderKind.Int, "int")
+        }
+        if shape.Name == "text" {
+            return StableOrder(model.CanonicalOrderKind.Text, "text")
+        }
+        return UnstableOrder()
+    }
+    if shape.Kind == model.TypeShapeKind.Enum {
+        return StableOrder(model.CanonicalOrderKind.Enum, QualifiedTypeName(source, shape.Name))
+    }
+    if shape.Kind != model.TypeShapeKind.Named {
+        return UnstableOrder()
+    }
+    var identity text = QualifiedTypeName(source, shape.Name)
+    if ContainsText(visited, identity) {
+        return UnstableOrder()
+    }
+    for candidate in sources {
+        for declaration in candidate.Declarations {
+            if declaration.Kind == model.DeclarationKind.Type &&
+                DeclarationKey(candidate.Package, declaration.Name) == identity &&
+                declaration.HasUnderlying {
+                var order model.CanonicalOrderIdentity = CanonicalOrderFrom(
+                    sources,
+                    candidate,
+                    declaration.Underlying,
+                    append(visited, identity),
+                )
+                if order.Stable {
+                    order.TypeIdentity = identity
+                }
+                return order
+            }
+        }
+    }
+    return UnstableOrder()
+}
+
+func SelectCollection(
+    surface model.TypeShape,
+    outer model.TypeShape,
+) CollectionSelection {
+    if outer.Kind == model.TypeShapeKind.Slice && len(outer.Elements) == 1 {
+        return CollectionSelection{
+            Found: true,
+            Kind: outer.Kind,
+            Surface: surface,
+            Key: BuiltinType("int"),
+            Value: outer.Elements[0],
+        }
+    }
+    if outer.Kind == model.TypeShapeKind.Map && len(outer.Elements) == 2 {
+        return CollectionSelection{
+            Found: true,
+            Kind: outer.Kind,
+            Surface: surface,
+            Key: outer.Elements[0],
+            Value: outer.Elements[1],
+        }
+    }
+    if outer.Kind == model.TypeShapeKind.Set && len(outer.Elements) == 1 {
+        return CollectionSelection{
+            Found: true,
+            Kind: outer.Kind,
+            Surface: surface,
+            Key: outer.Elements[0],
+            Value: outer.Elements[0],
+        }
+    }
+    return EmptyCollectionSelection()
+}
+
+func Signature(name text, collection CollectionSelection) BuiltinSignature {
+    if !collection.Found {
+        return EmptyBuiltinSignature()
+    }
+    if name == "len" {
+        return SignatureValue([]model.TypeShape{collection.Surface}, BuiltinType("int"))
+    }
+    if name == "has" && (collection.Kind == model.TypeShapeKind.Map ||
+        collection.Kind == model.TypeShapeKind.Set) {
+        return SignatureValue(
+            []model.TypeShape{collection.Surface, collection.Key},
+            BuiltinType("bool"),
+        )
+    }
+    if name == "put" && collection.Kind == model.TypeShapeKind.Map {
+        return SignatureValue(
+            []model.TypeShape{collection.Surface, collection.Key, collection.Value},
+            collection.Surface,
+        )
+    }
+    if name == "add" && collection.Kind == model.TypeShapeKind.Set {
+        return SignatureValue(
+            []model.TypeShape{collection.Surface, collection.Value},
+            collection.Surface,
+        )
+    }
+    if name == "remove" && (collection.Kind == model.TypeShapeKind.Map ||
+        collection.Kind == model.TypeShapeKind.Set) {
+        return SignatureValue(
+            []model.TypeShape{collection.Surface, collection.Key},
+            collection.Surface,
+        )
+    }
+    return EmptyBuiltinSignature()
+}
+
+func ValidIterationArity(collection CollectionSelection, count int) bool {
+    if collection.Kind == model.TypeShapeKind.Slice {
+        return count == 1 || count == 2
+    }
+    if collection.Kind == model.TypeShapeKind.Map {
+        return count == 2
+    }
+    if collection.Kind == model.TypeShapeKind.Set {
+        return count == 1
+    }
+    return false
+}
+
+func IterationBindingTypes(
+    collection CollectionSelection,
+    count int,
+) []model.TypeShape {
+    if collection.Kind == model.TypeShapeKind.Slice && count == 1 {
+        return []model.TypeShape{collection.Value}
+    }
+    if collection.Kind == model.TypeShapeKind.Slice && count == 2 {
+        return []model.TypeShape{collection.Key, collection.Value}
+    }
+    if collection.Kind == model.TypeShapeKind.Map && count == 2 {
+        return []model.TypeShape{collection.Key, collection.Value}
+    }
+    if collection.Kind == model.TypeShapeKind.Set && count == 1 {
+        return []model.TypeShape{collection.Value}
+    }
+    return []model.TypeShape{}
+}
+
+func IterationArityDetail(collection CollectionSelection, count int) text {
+    return [for {collection.Kind} and exact binding count {count}, return one exact literal:
+        slice requires 1 or 2 bindings; found N, map requires 2 bindings; found N, or set requires 1 binding; found N,
+        replacing N only with the canonical decimal count]
+}
+
+func StableOrder(
+    kind model.CanonicalOrderKind,
+    identity text,
+) model.CanonicalOrderIdentity {
+    return model.CanonicalOrderIdentity{Stable: true, Kind: kind, TypeIdentity: identity}
+}
+
+func UnstableOrder() model.CanonicalOrderIdentity {
+    return model.CanonicalOrderIdentity{
+        Stable: false,
+        Kind: model.CanonicalOrderKind.Unstable,
+        TypeIdentity: "",
+    }
+}
+
+func SignatureValue(
+    arguments []model.TypeShape,
+    result model.TypeShape,
+) BuiltinSignature {
+    return BuiltinSignature{Found: true, Arguments: arguments, Result: result}
+}
+
+func EmptyBuiltinSignature() BuiltinSignature {
+    return BuiltinSignature{
+        Found: false,
+        Arguments: []model.TypeShape{},
+        Result: BuiltinType(""),
+    }
+}
+
+func EmptyCollectionSelection() CollectionSelection {
+    return CollectionSelection{
+        Found: false,
+        Kind: model.TypeShapeKind.Builtin,
+        Surface: BuiltinType(""),
+        Key: BuiltinType(""),
+        Value: BuiltinType(""),
+    }
+}
+
+func BuiltinType(name text) model.TypeShape {
+    return model.TypeShape{
+        Kind: model.TypeShapeKind.Builtin,
+        Name: name,
+        NodePath: []int{},
+        Labels: []text{},
+        Elements: []model.TypeShape{},
+        ContractSource: "",
+        Origin: EmptyTypeNodeOrigin(),
+    }
+}
+
+func EmptyTypeNodeOrigin() model.TypeNodeOrigin {
+    return model.TypeNodeOrigin{
+        Token: "",
+        Position: model.SourcePosition{
+            Path: "",
+            Line: 0,
+            Column: 0,
+            Location: "",
+            SourceOrder: 0,
+        },
+    }
+}
+
+func ContainsText(values []text, wanted text) bool {
+    for value in values {
+        if value == wanted {
+            return true
+        }
+    }
+    return false
+}
+
+func DeclarationKey(packageName text, name text) text {
+    return [the unambiguous declaration key for package {packageName} and name {name}]
+}
+
+func QualifiedTypeName(source model.SourceFile, name text) text {
+    return [the declaration key selected by raw named type {name} and {source.Imports}, defaulting to
+        {source.Package} without reading source text or filesystem state]
+}

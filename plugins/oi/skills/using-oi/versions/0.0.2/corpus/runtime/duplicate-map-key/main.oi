@@ -1,0 +1,12 @@
+package main
+
+func Dynamic(value text) text {
+    return value
+}
+
+func main() {
+    var mapping map[text]int = map[text]int{
+        "alpha": 1,
+        Dynamic("alpha"): 2,
+    }
+}

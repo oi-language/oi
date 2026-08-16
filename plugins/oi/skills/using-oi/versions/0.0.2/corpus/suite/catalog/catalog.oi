@@ -72,6 +72,12 @@ func Cases() []Case {
             "UNBOUNDED_SEMANTIC_RESULT",
         ),
         RuntimeCase("missing-map-key", "runtime/missing-map-key", "MISSING_KEY"),
+        RuntimeCase("duplicate-map-key", "runtime/duplicate-map-key", "DUPLICATE_KEY"),
+        RuntimeCase(
+            "duplicate-set-element",
+            "runtime/duplicate-set-element",
+            "DUPLICATE_KEY",
+        ),
         RuntimeCase(
             "nondeterministic-derivation",
             "runtime/nondeterministic-derivation",

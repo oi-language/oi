@@ -44,6 +44,8 @@ type TypeShapeKind enum {
     Builtin
     Named
     Slice
+    Map
+    Set
     Optional
     Struct
     Enum
@@ -145,6 +147,54 @@ type Argument struct {
     Known bool
     ProducerCallID text
     Location text
+}
+
+type CanonicalOrderKind enum {
+    Unstable
+    Bool
+    Int
+    Text
+    Enum
+}
+
+type CanonicalOrderIdentity struct {
+    Stable bool
+    Kind CanonicalOrderKind
+    TypeIdentity text
+}
+
+type CollectionTypeUse struct {
+    Kind TypeShapeKind
+    MemberTypeSource text
+    Member TypeShape
+    Position SourcePosition
+}
+
+type CollectionIndexUse struct {
+    ID text
+    Caller text
+    Collection Argument
+    Index Argument
+    Position SourcePosition
+    ResultUsed bool
+    ResultTarget TypeShape
+    HasResultTarget bool
+    ResultTargetCallID text
+}
+
+type IterationBinding struct {
+    Name text
+    TypeSource text
+    Type TypeShape
+    Position SourcePosition
+}
+
+type CollectionIteration struct {
+    Caller text
+    Collection Argument
+    Bindings []IterationBinding
+    InPosition SourcePosition
+    Position SourcePosition
 }
 
 type TypeReference struct {
@@ -318,6 +368,10 @@ type SourceFile struct {
     Declarations []Declaration
     Entries []Entry
     Calls []CallSite
+    CollectionTypes []CollectionTypeUse
+    CollectionCalls []CallSite
+    CollectionIndexes []CollectionIndexUse
+    CollectionIterations []CollectionIteration
     RequiredShards []text
     TypeReferences []TypeReference
     Conversions []ConversionSite

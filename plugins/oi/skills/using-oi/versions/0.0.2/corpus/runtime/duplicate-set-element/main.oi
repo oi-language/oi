@@ -1,0 +1,12 @@
+package main
+
+func Dynamic(value text) text {
+    return value
+}
+
+func main() {
+    var members set[text] = set[text]{
+        "alpha",
+        Dynamic("alpha"),
+    }
+}

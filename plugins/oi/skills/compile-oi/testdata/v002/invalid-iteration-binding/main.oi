@@ -1,0 +1,15 @@
+package main
+
+func main() {
+    var mapping map[text]int
+    for key in mapping {
+    }
+
+    var members set[text]
+    for key, value in members {
+    }
+
+    var arity bool = has(mapping)
+    var argument bool = has(mapping, 1)
+    var result map[text]int = add(members, "extra")
+}

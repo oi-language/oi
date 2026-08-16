@@ -1,0 +1,70 @@
+package main
+
+type Key text
+
+type CollectionResult struct {
+    Indexed []int
+    Keys []Key
+    Values []int
+    Members []Key
+    Lookup int
+    MapCount int
+    SetCount int
+    HasMapKey bool
+    HasSetValue bool
+}
+
+func Build() CollectionResult {
+    var mapping map[Key]int = map[Key]int{
+        Key("bravo"): 2,
+        Key("alpha"): 1,
+    }
+    mapping = put(mapping, Key("charlie"), 3)
+    mapping = put(mapping, Key("bravo"), 20)
+    mapping = remove(mapping, Key("charlie"))
+
+    var members set[Key] = set[Key]{Key("bravo"), Key("alpha")}
+    members = add(members, Key("charlie"))
+    members = add(members, Key("bravo"))
+    members = remove(members, Key("charlie"))
+
+    var values []int = []int{10, 20, 30}
+    var indexed []int = []int{}
+    for index, value in values {
+        indexed = append(indexed, index)
+        indexed = append(indexed, value)
+        values = append(values, 40)
+    }
+
+    var keys []Key = []Key{}
+    var mappedValues []int = []int{}
+    for key, value in mapping {
+        keys = append(keys, key)
+        mappedValues = append(mappedValues, value)
+        mapping = put(mapping, Key("delta"), 4)
+        mapping = put(mapping, Key("bravo"), 99)
+    }
+
+    var orderedMembers []Key = []Key{}
+    for value in members {
+        orderedMembers = append(orderedMembers, value)
+        members = add(members, Key("delta"))
+        members = remove(members, Key("bravo"))
+    }
+
+    return CollectionResult{
+        Indexed: indexed,
+        Keys: keys,
+        Values: mappedValues,
+        Members: orderedMembers,
+        Lookup: mapping[Key("alpha")],
+        MapCount: len(mapping),
+        SetCount: len(members),
+        HasMapKey: has(mapping, Key("bravo")),
+        HasSetValue: has(members, Key("alpha")),
+    }
+}
+
+func main() {
+    Build()
+}

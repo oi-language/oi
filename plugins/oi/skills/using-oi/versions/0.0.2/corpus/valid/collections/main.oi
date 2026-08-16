@@ -23,10 +23,12 @@ func Build() CollectionResult {
     members = add(members, "bravo")
     members = remove(members, "charlie")
 
+    var values []int = []int{10, 20, 30}
     var indexed []int = []int{}
-    for index, value in []int{10, 20, 30} {
+    for index, value in values {
         indexed = append(indexed, index)
         indexed = append(indexed, value)
+        values = append(values, 40)
     }
 
     var mapped []text = []text{}
@@ -34,11 +36,15 @@ func Build() CollectionResult {
     for key, value in mapping {
         mapped = append(mapped, key)
         mappedValues = append(mappedValues, value)
+        mapping = put(mapping, "delta", 4)
+        mapping = put(mapping, "bravo", 99)
     }
 
     var orderedMembers []text = []text{}
     for value in members {
         orderedMembers = append(orderedMembers, value)
+        members = add(members, "delta")
+        members = remove(members, "bravo")
     }
 
     return CollectionResult{

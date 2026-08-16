@@ -1,0 +1,8 @@
+package main
+
+type OptionalName text?
+
+func main() {
+    var mapping map[[]text]int
+    var members set[OptionalName]
+}

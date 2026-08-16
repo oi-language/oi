@@ -5,6 +5,7 @@ import "std/fs"
 import "oi/skills/compile-oi/internal/load"
 import "oi/skills/compile-oi/internal/model"
 import "oi/skills/compile-oi/internal/report"
+import "oi/skills/compile-oi/internal/typecheck"
 
 type ResolvedType struct {
     Found bool
@@ -133,6 +134,7 @@ func Validate(target fs.Path, available []text) report.CompileReport {
 
 func ValidateTypePhase(graph load.Graph) []diagnostic.Diagnostic {
     var diagnostics []diagnostic.Diagnostic = LocalDiagnostics(graph.Sources, "type")
+    diagnostics = AppendDiagnostics(diagnostics, ValidateCollections(graph.Sources))
     diagnostics = AppendDiagnostics(diagnostics, ValidateDeclarations(graph.Sources))
     diagnostics = AppendDiagnostics(diagnostics, ValidateTypeReferences(graph.Sources))
     diagnostics = AppendDiagnostics(diagnostics, ValidateTransfers(graph.Sources))
@@ -144,6 +146,361 @@ func ValidateTypePhase(graph load.Graph) []diagnostic.Diagnostic {
     diagnostics = AppendDiagnostics(diagnostics, ValidateRuntimeHandles(graph.Sources))
     diagnostics = AppendDiagnostics(diagnostics, ValidateEntries(graph))
     return diagnostics
+}
+
+func ValidateCollections(sources []model.SourceFile) []diagnostic.Diagnostic {
+    var located []LocatedDiagnostic = []LocatedDiagnostic{}
+    for source in sources {
+        for use in source.CollectionTypes {
+            var order model.CanonicalOrderIdentity = typecheck.CanonicalOrder(
+                sources,
+                source,
+                use.Member,
+            )
+            if !order.Stable {
+                var category text = "UNSTABLE_MAP_KEY"
+                if use.Kind == model.TypeShapeKind.Set {
+                    category = "UNSTABLE_SET_ELEMENT"
+                }
+                located = InsertLocatedDiagnostic(
+                    located,
+                    LocatedDiagnostic{
+                        Position: use.Position,
+                        Diagnostic: diagnostic.New(
+                            category,
+                            "type",
+                            use.Position.Location,
+                            use.MemberTypeSource,
+                        ),
+                    },
+                )
+            }
+        }
+        for call in source.CollectionCalls {
+            located = AppendLocatedDiagnostics(
+                located,
+                ValidateCollectionCall(sources, source, call),
+            )
+        }
+        for use in source.CollectionIndexes {
+            located = AppendLocatedDiagnostics(
+                located,
+                ValidateCollectionIndex(sources, source, use),
+            )
+        }
+        for use in source.CollectionIterations {
+            located = AppendLocatedDiagnostics(
+                located,
+                ValidateCollectionIteration(sources, source, use),
+            )
+        }
+    }
+    return LocatedDiagnostics(located)
+}
+
+func ValidateCollectionCall(
+    sources []model.SourceFile,
+    source model.SourceFile,
+    call model.CallSite,
+) []LocatedDiagnostic {
+    var name text = CallName(call.Target)
+    var expectedArity int = CollectionBuiltinArity(name)
+    if expectedArity == 0 || len(call.Arguments) != expectedArity {
+        return []LocatedDiagnostic{
+            CollectionCallDiagnostic(call, "ARGUMENT_ARITY_MISMATCH", name),
+        }
+    }
+    var collection ResolvedType = ResolveArgumentType(sources, source, call.Arguments[0])
+    if !collection.Found {
+        return []LocatedDiagnostic{
+            CollectionCallDiagnostic(call, "ARGUMENT_TYPE_MISMATCH", name),
+        }
+    }
+    var surface model.TypeShape = SurfaceTypeShape(
+        sources[collection.SourceIndex],
+        collection.Shape,
+    )
+    var outer model.TypeShape = OuterTypeShape(
+        sources,
+        sources[collection.SourceIndex],
+        collection.Shape,
+        []text{},
+    )
+    var selected typecheck.CollectionSelection = typecheck.SelectCollection(surface, outer)
+    var signature typecheck.BuiltinSignature = typecheck.Signature(name, selected)
+    if !signature.Found {
+        return []LocatedDiagnostic{
+            CollectionCallDiagnostic(call, "ARGUMENT_TYPE_MISMATCH", name),
+        }
+    }
+    for index in ArgumentIndexes(call.Arguments) {
+        var actual ResolvedType = ResolveArgumentType(sources, source, call.Arguments[index])
+        if !actual.Found || !SameType(
+            sources[actual.SourceIndex],
+            actual.Shape,
+            sources[collection.SourceIndex],
+            signature.Arguments[index],
+        ) {
+            return []LocatedDiagnostic{
+                CollectionCallDiagnostic(call, "ARGUMENT_TYPE_MISMATCH", name),
+            }
+        }
+    }
+    if call.ResultUsed && !CollectionResultMatches(
+        sources,
+        source,
+        call,
+        sources[collection.SourceIndex],
+        signature.Result,
+    ) {
+        return []LocatedDiagnostic{
+            CollectionCallDiagnostic(call, "RESULT_TYPE_MISMATCH", name),
+        }
+    }
+    return []LocatedDiagnostic{}
+}
+
+func ValidateCollectionIndex(
+    sources []model.SourceFile,
+    source model.SourceFile,
+    use model.CollectionIndexUse,
+) []LocatedDiagnostic {
+    var collection ResolvedType = ResolveArgumentType(sources, source, use.Collection)
+    if !collection.Found {
+        return []LocatedDiagnostic{CollectionIndexTargetDiagnostic(use)}
+    }
+    var surface model.TypeShape = SurfaceTypeShape(
+        sources[collection.SourceIndex],
+        collection.Shape,
+    )
+    var outer model.TypeShape = OuterTypeShape(
+        sources,
+        sources[collection.SourceIndex],
+        collection.Shape,
+        []text{},
+    )
+    var selected typecheck.CollectionSelection = typecheck.SelectCollection(surface, outer)
+    if !selected.Found || selected.Kind == model.TypeShapeKind.Set {
+        return []LocatedDiagnostic{CollectionIndexTargetDiagnostic(use)}
+    }
+    var index ResolvedType = ResolveArgumentType(sources, source, use.Index)
+    if !index.Found || !SameType(
+        sources[index.SourceIndex],
+        index.Shape,
+        sources[collection.SourceIndex],
+        selected.Key,
+    ) {
+        return []LocatedDiagnostic{
+            LocatedDiagnostic{
+                Position: use.Position,
+                Diagnostic: diagnostic.New(
+                    "TYPE_MISMATCH",
+                    "type",
+                    use.Index.Location,
+                    TypeShapeDetail(selected.Key),
+                ),
+            },
+        }
+    }
+    if use.ResultUsed && !CollectionIndexResultMatches(
+        sources,
+        source,
+        use,
+        sources[collection.SourceIndex],
+        selected.Value,
+    ) {
+        return []LocatedDiagnostic{
+            LocatedDiagnostic{
+                Position: use.Position,
+                Diagnostic: diagnostic.New(
+                    "TYPE_MISMATCH",
+                    "type",
+                    use.Position.Location,
+                    TypeShapeDetail(selected.Value),
+                ),
+            },
+        }
+    }
+    return []LocatedDiagnostic{}
+}
+
+func ValidateCollectionIteration(
+    sources []model.SourceFile,
+    source model.SourceFile,
+    use model.CollectionIteration,
+) []LocatedDiagnostic {
+    var collection ResolvedType = ResolveArgumentType(sources, source, use.Collection)
+    if !collection.Found {
+        return []LocatedDiagnostic{
+            LocatedDiagnostic{
+                Position: use.Position,
+                Diagnostic: diagnostic.New(
+                    "UNSUPPORTED_TYPE",
+                    "type",
+                    use.Position.Location,
+                    use.Collection.TypeSource,
+                ),
+            },
+        }
+    }
+    var surface model.TypeShape = SurfaceTypeShape(
+        sources[collection.SourceIndex],
+        collection.Shape,
+    )
+    var outer model.TypeShape = OuterTypeShape(
+        sources,
+        sources[collection.SourceIndex],
+        collection.Shape,
+        []text{},
+    )
+    var selected typecheck.CollectionSelection = typecheck.SelectCollection(surface, outer)
+    if !selected.Found {
+        return []LocatedDiagnostic{
+            LocatedDiagnostic{
+                Position: use.Position,
+                Diagnostic: diagnostic.New(
+                    "UNSUPPORTED_TYPE",
+                    "type",
+                    use.Position.Location,
+                    use.Collection.TypeSource,
+                ),
+            },
+        }
+    }
+    var count int = len(use.Bindings)
+    if !typecheck.ValidIterationArity(selected, count) {
+        var position model.SourcePosition = use.InPosition
+        var maximum int = IterationMaximumBindings(selected)
+        if count > maximum {
+            position = use.Bindings[maximum].Position
+        }
+        return []LocatedDiagnostic{
+            LocatedDiagnostic{
+                Position: position,
+                Diagnostic: diagnostic.New(
+                    "ITERATION_BINDING_ARITY_MISMATCH",
+                    "type",
+                    position.Location,
+                    typecheck.IterationArityDetail(selected, count),
+                ),
+            },
+        }
+    }
+    var expected []model.TypeShape = typecheck.IterationBindingTypes(selected, count)
+    for index in IterationBindingIndexes(use.Bindings) {
+        if !SameType(
+            source,
+            use.Bindings[index].Type,
+            sources[collection.SourceIndex],
+            expected[index],
+        ) {
+            return []LocatedDiagnostic{
+                LocatedDiagnostic{
+                    Position: use.Bindings[index].Position,
+                    Diagnostic: diagnostic.New(
+                        "TYPE_MISMATCH",
+                        "type",
+                        use.Bindings[index].Position.Location,
+                        TypeShapeDetail(expected[index]),
+                    ),
+                },
+            }
+        }
+    }
+    return []LocatedDiagnostic{}
+}
+
+func CollectionBuiltinArity(name text) int {
+    if name == "len" {
+        return 1
+    }
+    if name == "has" || name == "add" || name == "remove" {
+        return 2
+    }
+    if name == "put" {
+        return 3
+    }
+    return 0
+}
+
+func CollectionCallDiagnostic(
+    call model.CallSite,
+    category text,
+    detail text,
+) LocatedDiagnostic {
+    return LocatedDiagnostic{
+        Position: call.Position,
+        Diagnostic: diagnostic.New(category, "type", call.Location, detail),
+    }
+}
+
+func CollectionIndexTargetDiagnostic(
+    use model.CollectionIndexUse,
+) LocatedDiagnostic {
+    return LocatedDiagnostic{
+        Position: use.Position,
+        Diagnostic: diagnostic.New(
+            "INVALID_INDEX_TARGET",
+            "type",
+            use.Position.Location,
+            use.Collection.TypeSource,
+        ),
+    }
+}
+
+func CollectionResultMatches(
+    sources []model.SourceFile,
+    source model.SourceFile,
+    call model.CallSite,
+    resultSource model.SourceFile,
+    result model.TypeShape,
+) bool {
+    if call.HasResultTarget {
+        return SameType(resultSource, result, source, call.ResultTarget)
+    }
+    if call.ResultTargetCallID != "" {
+        var target ResolvedType = ResolveCallResult(sources, source, call.ResultTargetCallID)
+        return target.Found && SameType(
+            resultSource,
+            result,
+            sources[target.SourceIndex],
+            target.Shape,
+        )
+    }
+    return true
+}
+
+func CollectionIndexResultMatches(
+    sources []model.SourceFile,
+    source model.SourceFile,
+    use model.CollectionIndexUse,
+    resultSource model.SourceFile,
+    result model.TypeShape,
+) bool {
+    if use.HasResultTarget {
+        return SameType(resultSource, result, source, use.ResultTarget)
+    }
+    if use.ResultTargetCallID != "" {
+        var target ResolvedType = ResolveCallResult(sources, source, use.ResultTargetCallID)
+        return target.Found && SameType(
+            resultSource,
+            result,
+            sources[target.SourceIndex],
+            target.Shape,
+        )
+    }
+    return true
+}
+
+func IterationMaximumBindings(collection typecheck.CollectionSelection) int {
+    if collection.Kind == model.TypeShapeKind.Set {
+        return 1
+    }
+    return 2
+}
+
+func IterationBindingIndexes(values []model.IterationBinding) []int {
+    return [the integer indexes zero through len of {values} minus one in ascending order]
 }
 
 func ValidateDeclarations(sources []model.SourceFile) []diagnostic.Diagnostic {
@@ -486,6 +843,8 @@ func DurableTransferType(shape model.TypeShape) bool {
     if shape.Kind != model.TypeShapeKind.Builtin &&
         shape.Kind != model.TypeShapeKind.Named &&
         shape.Kind != model.TypeShapeKind.Slice &&
+        shape.Kind != model.TypeShapeKind.Map &&
+        shape.Kind != model.TypeShapeKind.Set &&
         shape.Kind != model.TypeShapeKind.Optional &&
         shape.Kind != model.TypeShapeKind.Struct &&
         shape.Kind != model.TypeShapeKind.Enum &&
@@ -1964,11 +2323,77 @@ func ResolveCallResult(
             }
         }
     }
+    var collection ResolvedType = ResolveCollectionResult(sources, source, callID)
+    if collection.Found {
+        return collection
+    }
     return ResolvedType{
         Found: false,
         SourceIndex: 0,
         Shape: EmptyTypeShape(),
     }
+}
+
+func ResolveCollectionResult(
+    sources []model.SourceFile,
+    source model.SourceFile,
+    callID text,
+) ResolvedType {
+    for call in source.CollectionCalls {
+        if call.ID == callID && len(call.Arguments) == CollectionBuiltinArity(CallName(call.Target)) {
+            var collection ResolvedType = ResolveArgumentType(sources, source, call.Arguments[0])
+            if collection.Found {
+                var surface model.TypeShape = SurfaceTypeShape(
+                    sources[collection.SourceIndex],
+                    collection.Shape,
+                )
+                var outer model.TypeShape = OuterTypeShape(
+                    sources,
+                    sources[collection.SourceIndex],
+                    collection.Shape,
+                    []text{},
+                )
+                var selected typecheck.CollectionSelection = typecheck.SelectCollection(surface, outer)
+                var signature typecheck.BuiltinSignature = typecheck.Signature(
+                    CallName(call.Target),
+                    selected,
+                )
+                if signature.Found {
+                    return ResolvedType{
+                        Found: true,
+                        SourceIndex: collection.SourceIndex,
+                        Shape: signature.Result,
+                    }
+                }
+            }
+        }
+    }
+    for use in source.CollectionIndexes {
+        if use.ID == callID {
+            var collection ResolvedType = ResolveArgumentType(sources, source, use.Collection)
+            if collection.Found {
+                var surface model.TypeShape = SurfaceTypeShape(
+                    sources[collection.SourceIndex],
+                    collection.Shape,
+                )
+                var outer model.TypeShape = OuterTypeShape(
+                    sources,
+                    sources[collection.SourceIndex],
+                    collection.Shape,
+                    []text{},
+                )
+                var selected typecheck.CollectionSelection = typecheck.SelectCollection(surface, outer)
+                if selected.Found && selected.Kind != model.TypeShapeKind.Set {
+                    return ResolvedType{
+                        Found: true,
+                        SourceIndex: collection.SourceIndex,
+                        Shape: selected.Value,
+                    }
+                }
+            }
+        }
+    }
+    return ResolvedType{Found: false, SourceIndex: 0, Shape: EmptyTypeShape()}
 }
 
 func ValidateTypeCompatibility(
