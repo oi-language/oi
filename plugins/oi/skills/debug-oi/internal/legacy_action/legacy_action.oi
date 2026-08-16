@@ -1,0 +1,64 @@
+package legacy_action
+
+import "oi/skills/debug-oi/internal/legacy_model"
+import "oi/skills/debug-oi/internal/legacy_step"
+import "oi/skills/debug-oi/internal/legacy_value"
+import "oi/skills/debug-oi/internal/model"
+import "oi/skills/debug-oi/internal/report"
+
+func Values(slots []legacy_model.SlotValue, operands []model.Operand) []legacy_model.Value {
+    var result []legacy_model.Value = []legacy_model.Value{}
+    for operand in operands {
+        result = append(result, legacy_value.Operand(slots, operand))
+    }
+    return result
+}
+
+func BranchLocation(program model.Program, condition model.Operand, function model.Function) text {
+    if condition.Kind == model.OperandKind.Slot {
+        return legacy_step.SlotLocation(program, legacy_step.PresentInt(condition.SlotID))
+    }
+    return function.EntryLocation
+}
+
+func Advance(program model.Program, function model.Function, machine legacy_model.Machine, activation legacy_model.Activation,
+    instruction model.Instruction) legacy_model.Transition {
+    if instruction.Kind == model.InstructionKind.Bind {
+        var step model.BindStep = legacy_step.PresentBind(instruction.Bind)
+        var value legacy_model.Value = legacy_value.Operand(activation.Slots, step.Source)
+        activation.Slots = legacy_value.Put(activation.Slots, step.DestinationSlot, value)
+        machine = legacy_step.AddEvent(machine, report.EventKind.Bind, legacy_step.SlotLocation(program, step.DestinationSlot), value.Canonical)
+        activation.PC = step.Continuation
+    } else if instruction.Kind == model.InstructionKind.Store {
+        var step model.StoreStep = legacy_step.PresentStore(instruction.Store)
+        var indexes []legacy_model.Value = []legacy_model.Value{}
+        for selector in step.Path.Items {
+            if selector.Kind == model.SelectorKind.Index {
+                indexes = append(indexes, legacy_value.Operand(activation.Slots, legacy_step.PresentOperand(selector.Index)))
+            }
+        }
+        var base legacy_model.Value = legacy_value.Slot(activation.Slots, step.BaseSlot)
+        var stored legacy_model.Value = legacy_value.Store(program, base, step.Path, indexes,
+            legacy_value.Operand(activation.Slots, step.Value), step.Location)
+        activation.Slots = legacy_value.Put(activation.Slots, step.BaseSlot, stored)
+        activation.PC = step.Continuation
+    } else if instruction.Kind == model.InstructionKind.Compute {
+        var step model.ComputeStep = legacy_step.PresentCompute(instruction.Compute)
+        var value legacy_model.Value = legacy_value.Compute(program, step, Values(activation.Slots, step.Inputs))
+        activation.Slots = legacy_value.Put(activation.Slots, step.ResultSlot, value)
+        activation.PC = step.Continuation
+    } else if instruction.Kind == model.InstructionKind.Branch {
+        var step model.BranchStep = legacy_step.PresentBranch(instruction.Branch)
+        var choice bool = legacy_value.Bool(legacy_value.Operand(activation.Slots, step.Condition))
+        var detail text = [literal true when {choice}, otherwise literal false]
+        machine = legacy_step.AddEvent(machine, report.EventKind.Branch, BranchLocation(program, step.Condition, function), detail)
+        if choice {
+            activation.PC = step.TrueTarget
+        } else {
+            activation.PC = step.FalseTarget
+        }
+    } else {
+        activation.PC = legacy_step.PresentJump(instruction.Jump).Target
+    }
+    return legacy_model.Transition{Machine: machine, Activation: activation, Failure: none}
+}

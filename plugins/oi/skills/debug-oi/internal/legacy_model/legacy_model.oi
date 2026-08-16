@@ -1,0 +1,81 @@
+package legacy_model
+
+import "std/diagnostic"
+import "oi/skills/debug-oi/internal/model"
+import "oi/skills/debug-oi/internal/report"
+
+type Value struct {
+    TypeID int
+    Canonical text
+    NamedIdentity model.TypeIdentity?
+}
+
+type SlotValue struct {
+    SlotID int
+    Value Value?
+}
+
+type Counter struct {
+    Key text
+    Next int
+}
+
+type TaskState struct {
+    ID text
+    SourceIndex int
+    OwnerActivationID text
+    Value Value?
+    Failure diagnostic.Diagnostic?
+    Observed bool
+}
+
+type Message struct {
+    ID text
+    Value Value
+}
+
+type ChannelState struct {
+    ID text
+    Capacity int
+    Messages []Message
+}
+
+type Machine struct {
+    Events []report.Event
+    RequiredTranscriptEntries []text
+    UsedTranscriptIDs []text
+    Tasks []TaskState
+    Channels []ChannelState
+    ActivationCounters []Counter
+    JournalIndex int
+}
+
+type Activation struct {
+    TaskID text
+    ID text
+    FunctionID int
+    PC int
+    Slots []SlotValue
+    EffectCounters []Counter
+    ChannelCreation int
+    SelectEncounter int
+    LaunchedTaskIDs []text
+}
+
+type RunResult struct {
+    Machine Machine
+    Value Value?
+    Failure diagnostic.Diagnostic?
+    Incomplete bool
+}
+
+type Transition struct {
+    Machine Machine
+    Activation Activation
+    Failure diagnostic.Diagnostic?
+}
+
+type Selection struct {
+    CaseIndex int
+    RelatedIdentity text?
+}

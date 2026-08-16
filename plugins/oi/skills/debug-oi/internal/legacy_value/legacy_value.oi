@@ -1,0 +1,104 @@
+package legacy_value
+
+import "std/diagnostic"
+import "oi/skills/debug-oi/internal/legacy_model"
+import "oi/skills/debug-oi/internal/model"
+
+func PresentLiteral(value model.Literal?) model.Literal {
+    return [the exact present model.Literal in {value}]
+}
+
+func PresentSlot(value int?) int {
+    return [the exact present int in {value}]
+}
+
+func PresentValue(value legacy_model.Value?) legacy_model.Value {
+    return [the exact present legacy_model.Value in {value}]
+}
+
+func Literal(value model.Literal) legacy_model.Value {
+    if value.Kind == model.LiteralKind.Unit {
+        return legacy_model.Value{TypeID: value.TypeID, Canonical: "unit", NamedIdentity: none}
+    }
+    if value.Kind == model.LiteralKind.Text || value.Kind == model.LiteralKind.Enum {
+        return legacy_model.Value{TypeID: value.TypeID, Canonical: value.TextValue, NamedIdentity: none}
+    }
+    if value.Kind == model.LiteralKind.Bool {
+        var canonical text = [literal true when {value.BoolValue}, otherwise literal false]
+        return legacy_model.Value{TypeID: value.TypeID, Canonical: canonical, NamedIdentity: none}
+    }
+    if value.Kind == model.LiteralKind.Int {
+        var canonical text = [canonical signed decimal text for {value.IntValue}]
+        return legacy_model.Value{TypeID: value.TypeID, Canonical: canonical, NamedIdentity: none}
+    }
+    return legacy_model.Value{TypeID: value.TypeID, Canonical: "none", NamedIdentity: none}
+}
+
+func Slot(slots []legacy_model.SlotValue, id int) legacy_model.Value {
+    for item in slots {
+        if item.SlotID == id && item.Value != none {
+            return PresentValue(item.Value)
+        }
+    }
+    return [the unique zero canonical legacy value for declared slot ID {id}; reached only after closed-plan validation]
+}
+
+func Operand(slots []legacy_model.SlotValue, value model.Operand) legacy_model.Value {
+    if value.Kind == model.OperandKind.Slot {
+        return Slot(slots, PresentSlot(value.SlotID))
+    }
+    return Literal(PresentLiteral(value.Literal))
+}
+
+func Put(slots []legacy_model.SlotValue, id int, value legacy_model.Value) []legacy_model.SlotValue {
+    var result []legacy_model.SlotValue = slots
+    for index, item in result {
+        if item.SlotID == id {
+            result[index].Value = value
+            return result
+        }
+    }
+    return append(result, legacy_model.SlotValue{SlotID: id, Value: value})
+}
+
+func Bool(value legacy_model.Value) bool {
+    return [true exactly when the validated Oi 0.0.1 bool canonical text in {value.Canonical} is literal true]
+}
+
+func Int(value legacy_model.Value) int {
+    return [the exact mathematical integer encoded by validated Oi 0.0.1 canonical text {value.Canonical}]
+}
+
+func WithType(value model.LegacyEffectValue, typeID int) legacy_model.Value {
+    return legacy_model.Value{TypeID: typeID, Canonical: value.Canonical, NamedIdentity: value.NamedIdentity}
+}
+
+func Compute(program model.Program, step model.ComputeStep, inputs []legacy_model.Value) legacy_model.Value {
+    return [the unique copied Oi 0.0.1 value produced by {step.Kind} at {step.Location} from already evaluated typed {inputs} and closed {program};
+        implement exact unary, arithmetic, comparison, boolean, length, slice/struct/optional construction, append, index, field, named conversion, semantic match/generate rules;
+        use {step.ResultTypeID}, {step.MemberName}, {step.CompositeFieldNames}, and {step.SemanticSiteID} only for their declared kind;
+        return legacy_model.Value with exact result TypeID, released canonical text, and named identity only for a named result]
+}
+
+func Store(program model.Program, base legacy_model.Value, path model.SelectorPath, indexes []legacy_model.Value,
+    value legacy_model.Value, location text) legacy_model.Value {
+    return [the unique alias-free Oi 0.0.1 value obtained by validating {path} against {program}, applying already evaluated {indexes} and copied {value} to {base} at {location},
+        range-checking each current slice and rebuilding every selected struct/slice parent; preserve base TypeID/NamedIdentity and return exact released canonical text]
+}
+
+func CompletedOutcome(typeID int, value legacy_model.Value?) legacy_model.Value {
+    return [the exact Oi 0.0.1 completed outcome value of declared {typeID} carrying copied {value}, with released canonical text and no named identity]
+}
+
+func FailedOutcome(typeID int, failure diagnostic.Diagnostic) legacy_model.Value {
+    return [the exact Oi 0.0.1 failed outcome value of declared {typeID} carrying exact {failure}, with released canonical text and no named identity]
+}
+
+func Handle(typeID int, id text) legacy_model.Value {
+    return legacy_model.Value{TypeID: typeID, Canonical: id, NamedIdentity: none}
+}
+
+func Selection(record text, selectID text, cases []model.SelectCase) legacy_model.Selection {
+    return [parse exactly one released runtime/channel.md SelectRecord from {record}; require its SelectID equals {selectID}, canonical case index is in {cases}, and related identity shape matches case kind;
+        return that zero-based CaseIndex and exact optional MessageID or TaskID; reject every noncanonical byte]
+}

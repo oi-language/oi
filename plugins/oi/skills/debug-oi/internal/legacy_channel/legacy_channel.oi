@@ -1,0 +1,106 @@
+package legacy_channel
+
+import "std/diagnostic"
+import "oi/skills/debug-oi/internal/identity"
+import "oi/skills/debug-oi/internal/legacy_model"
+import "oi/skills/debug-oi/internal/legacy_step"
+import "oi/skills/debug-oi/internal/legacy_value"
+import "oi/skills/debug-oi/internal/model"
+import "oi/skills/debug-oi/internal/report"
+
+func Remaining(messages []legacy_model.Message) []legacy_model.Message {
+    var result []legacy_model.Message = []legacy_model.Message{}
+    for index, item in messages {
+        if index != 0 {
+            result = append(result, item)
+        }
+    }
+    return result
+}
+
+func AppendMessage(machine legacy_model.Machine, channelIndex int, value legacy_model.Value) legacy_model.Machine {
+    var channelID text = machine.Channels[channelIndex].ID
+    var messageID text = channelID + "/m" + [canonical nonnegative decimal text for {len(machine.Channels[channelIndex].Messages)}]
+    machine.Channels[channelIndex].Messages = append(machine.Channels[channelIndex].Messages,
+        legacy_model.Message{ID: messageID, Value: value})
+    return machine
+}
+
+func Advance(program model.Program, machine legacy_model.Machine, activation legacy_model.Activation,
+    instruction model.Instruction, journal []text) legacy_model.Transition {
+    if instruction.Kind == model.InstructionKind.Channel {
+        var step model.ChannelStep = legacy_step.PresentChannel(instruction.Channel)
+        var channelIdentity model.ChannelIdentity = model.ChannelIdentity{ActivationID: activation.ID, CreationIndex: activation.ChannelCreation}
+        activation.ChannelCreation = activation.ChannelCreation + 1
+        var channelID text = identity.ChannelID(channelIdentity)
+        var capacity int = legacy_value.Int(legacy_value.Operand(activation.Slots, step.Capacity))
+        machine.Channels = append(machine.Channels, legacy_model.ChannelState{ID: channelID, Capacity: capacity, Messages: []legacy_model.Message{}})
+        activation.Slots = legacy_value.Put(activation.Slots, step.ChannelSlot,
+            legacy_value.Handle(legacy_step.SlotType(program, step.ChannelSlot), channelID))
+        activation.Slots = legacy_value.Put(activation.Slots, step.SenderSlot,
+            legacy_value.Handle(legacy_step.SlotType(program, step.SenderSlot), channelID + "/s0"))
+        activation.Slots = legacy_value.Put(activation.Slots, step.ReceiverSlot,
+            legacy_value.Handle(legacy_step.SlotType(program, step.ReceiverSlot), channelID + "/r0"))
+        activation.PC = step.Continuation
+        return legacy_model.Transition{Machine: machine, Activation: activation, Failure: none}
+    }
+    if instruction.Kind == model.InstructionKind.Send {
+        var step model.SendStep = legacy_step.PresentSend(instruction.Send)
+        var channelID text = legacy_value.Slot(activation.Slots, step.ChannelSlot).Canonical
+        var channelIndex int = legacy_step.ChannelIndex(machine, channelID)
+        var value legacy_model.Value = legacy_value.Operand(activation.Slots, step.Value)
+        machine = AppendMessage(machine, channelIndex, value)
+        machine = legacy_step.AddEvent(machine, report.EventKind.Send, step.Location, value.Canonical)
+        activation.PC = step.Completion.Continuation
+        return legacy_model.Transition{Machine: machine, Activation: activation, Failure: none}
+    }
+    if instruction.Kind == model.InstructionKind.Receive {
+        var step model.ReceiveStep = legacy_step.PresentReceive(instruction.Receive)
+        var channelID text = legacy_value.Slot(activation.Slots, step.ChannelSlot).Canonical
+        var channelIndex int = legacy_step.ChannelIndex(machine, channelID)
+        var message legacy_model.Message = machine.Channels[channelIndex].Messages[0]
+        machine.Channels[channelIndex].Messages = Remaining(machine.Channels[channelIndex].Messages)
+        activation.Slots = legacy_value.Put(activation.Slots, step.DestinationSlot, message.Value)
+        machine = legacy_step.AddEvent(machine, report.EventKind.Receive, step.Location, message.Value.Canonical)
+        activation.PC = step.Completion.Continuation
+        return legacy_model.Transition{Machine: machine, Activation: activation, Failure: none}
+    }
+    var step model.SelectStep = legacy_step.PresentSelect(instruction.Select)
+    var selectIdentity model.SelectIdentity = model.SelectIdentity{ActivationID: activation.ID, EncounterIndex: activation.SelectEncounter}
+    activation.SelectEncounter = activation.SelectEncounter + 1
+    var selected legacy_model.Selection = legacy_value.Selection(journal[machine.JournalIndex], identity.SelectID(selectIdentity), step.Cases)
+    machine.JournalIndex = machine.JournalIndex + 1
+    var selectedCase model.SelectCase = step.Cases[selected.CaseIndex]
+    if selectedCase.Kind == model.SelectCaseKind.Receive {
+        var channelID text = legacy_value.Slot(activation.Slots, legacy_step.PresentInt(selectedCase.ChannelSlot)).Canonical
+        var channelIndex int = legacy_step.ChannelIndex(machine, channelID)
+        var message legacy_model.Message = machine.Channels[channelIndex].Messages[0]
+        machine.Channels[channelIndex].Messages = Remaining(machine.Channels[channelIndex].Messages)
+        if selectedCase.ResultSlot != none {
+            activation.Slots = legacy_value.Put(activation.Slots, legacy_step.PresentInt(selectedCase.ResultSlot), message.Value)
+        }
+        machine = legacy_step.AddEvent(machine, report.EventKind.Receive, selectedCase.Location, message.Value.Canonical)
+    } else if selectedCase.Kind == model.SelectCaseKind.Await {
+        var taskID text = legacy_value.Slot(activation.Slots, legacy_step.PresentInt(selectedCase.HandleSlot)).Canonical
+        var taskIndex int = legacy_step.TaskIndex(machine, taskID)
+        machine.Tasks[taskIndex].Observed = true
+        machine = legacy_step.AddEvent(machine, report.EventKind.Await, selectedCase.Location, taskID)
+        if machine.Tasks[taskIndex].Failure != none {
+            var item diagnostic.Diagnostic = legacy_step.PresentDiagnostic(machine.Tasks[taskIndex].Failure)
+            return legacy_model.Transition{Machine: machine, Activation: activation,
+                Failure: legacy_step.Frame(item, "await", selectedCase.Location)}
+        }
+        if selectedCase.ResultSlot != none {
+            activation.Slots = legacy_value.Put(activation.Slots, legacy_step.PresentInt(selectedCase.ResultSlot),
+                legacy_value.PresentValue(machine.Tasks[taskIndex].Value))
+        }
+    } else {
+        var channelID text = legacy_value.Slot(activation.Slots, legacy_step.PresentInt(selectedCase.ChannelSlot)).Canonical
+        var channelIndex int = legacy_step.ChannelIndex(machine, channelID)
+        var value legacy_model.Value = legacy_value.Operand(activation.Slots, legacy_step.PresentOperand(selectedCase.Value))
+        machine = AppendMessage(machine, channelIndex, value)
+        machine = legacy_step.AddEvent(machine, report.EventKind.Send, selectedCase.Location, value.Canonical)
+    }
+    activation.PC = selectedCase.Target
+    return legacy_model.Transition{Machine: machine, Activation: activation, Failure: none}
+}

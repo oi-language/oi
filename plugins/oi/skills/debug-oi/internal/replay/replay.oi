@@ -5,19 +5,28 @@ import "std/diagnostic"
 import "std/execution"
 import "std/fs"
 import "oi/skills/debug-oi/internal/identity"
+import "oi/skills/debug-oi/internal/legacy_bridge"
+import "oi/skills/debug-oi/internal/legacy_runtime"
 import "oi/skills/debug-oi/internal/model"
 import "oi/skills/debug-oi/internal/report"
 
-effect CompileTarget(target fs.Path, bindings []debug.Binding, mappings []execution.MappingIdentity, authorities []text) model.LoadPlan {
+effect CompileTarget(target fs.Path, bindings []debug.Binding, mappings []execution.MappingIdentity, authorities []text,
+    transcript []debug.EffectResult) model.LoadPlan {
     uses tool.compile
     contract [invoke the host shared exact-version compile, identity, and entry-binding oracle once for {target}, complete typed {bindings}, proposed {mappings}, and {authorities};
-        logical-read the nearest module, exact snapshot, declared sources, triggered runtime, and reachable standard packages once and return their actual TargetIdentity without source bodies;
+        logical-read the nearest module, exact snapshot, declared sources, triggered runtime, and reachable standard packages once and return their actual TargetIdentity without source bodies, including the main token Location;
         validate source mapping compatibility and return actual normalized mapping fields with every digest independently recomputed; validate binding names/types/contracts before returning Crossed;
+        for exact Oi 0.0.1 ignore proposed mappings and authorities, compile mapping-free replay IR, and let neither proposed value affect Target, Program, InitialSlots, LegacyTranscript, or diagnostics;
+        a legacy entry named-contract rejection is TYPE_CONTRACT_MISMATCH, input binding, entry parameter identifier Location, declared named type exact source spelling Detail, and empty Trace;
+        every legacy EffectSite StaticCallsiteID equals its effect call SourcePosition.Location; existing fixtures retain exact testdata/<fixture>/main.oi path labels despite local version manifests;
         record every compatibility probe as a separate host mapping attempt, never as a target Operation, and never invoke target main, target effects, Reply, subagents, handoff, or user interaction;
-        for an Oi 0.0.1 target also lower the same closed typed Program and InitialSlots used by the released debugger, preserving its old replay observations;
-        for an Oi 0.0.2 target return a zero Program because receipt replay validates the protected journal and never interprets or invokes the target;
-        Invalid has BindingStatus NotRun, zero target/program/slots/binding diagnostics, and ordered load Diagnostics; Rejected has actual target/program, empty slots/load diagnostics, and exact BindingDiagnostics;
-        Crossed has actual target, one typed InitialSlot per legacy parameter when applicable, and empty Diagnostics and BindingDiagnostics; reject every inconsistent union or identity]
+        for an Oi 0.0.1 target lower the same closed typed Program and legacy canonical InitialSlots used by the released debugger;
+        decode typed transcript results into LegacyTranscript under the compiled effect result types;
+        this boundary conversion follows the target types and frozen canonical value specifications and performs no instruction, control, scheduling, effect, or replay decision;
+        for an Oi 0.0.2 target return a zero Program and empty legacy fields because receipt replay validates the protected journal and never interprets or invokes the target;
+        Invalid has BindingStatus NotRun, zero target/program/slots/legacy fields/binding diagnostics, and ordered load Diagnostics;
+        Rejected has actual target/program, empty slots/legacy fields/load diagnostics, and exact BindingDiagnostics;
+        Crossed has actual target, one InitialSlot per legacy parameter when applicable, complete legacy boundary values, and empty Diagnostics and BindingDiagnostics; reject every inconsistent union or identity]
 }
 
 func EffectDiagnostic(cause failure) diagnostic.Diagnostic {
@@ -111,14 +120,23 @@ func PresentValue(value execution.TypedValue?) execution.TypedValue {
     return [the exact present execution.TypedValue in {value}]
 }
 
-func PreAdmissionFailure(receipt execution.ExecutionReceipt) bool {
-    return [true exactly when {receipt} is a recognized terminal pre-entry failure before trusted policy/context admission: Terminal Failed, Failure present in parse, module, type,
-        effect mapping, input binding, or execution admission phase, zero Operations, and absent ReplyOperationID and Reply]
+func PresentFailure(value diagnostic.Diagnostic?) diagnostic.Diagnostic {
+    return [the exact present diagnostic.Diagnostic in {value}]
 }
 
-func PolicyValid(journal execution.ExecutionJournal, receipt execution.ExecutionReceipt) bool {
+func IsolationFailureValid(target model.TargetIdentity, receipt execution.ExecutionReceipt) bool {
+    if receipt.Terminal != execution.TerminalStatus.Failed || receipt.Failure == none || len(receipt.Operations) != 0 ||
+        receipt.ReplyOperationID != none || receipt.Reply != none {
+        return false
+    }
+    var item diagnostic.Diagnostic = PresentFailure(receipt.Failure)
+    return item.Category == "CONTEXT_ISOLATION_UNAVAILABLE" && item.Phase == "execution admission" && item.Location == target.EntryLocation &&
+        item.Detail == "sealed context unavailable" && len(item.Trace) == 0
+}
+
+func PolicyValid(target model.TargetIdentity, journal execution.ExecutionJournal, receipt execution.ExecutionReceipt) bool {
     if receipt.Policy == none {
-        return journal.Policy == none && PreAdmissionFailure(receipt)
+        return journal.Policy == none && IsolationFailureValid(target, receipt)
     }
     if journal.Policy == none {
         return false
@@ -126,18 +144,6 @@ func PolicyValid(journal execution.ExecutionJournal, receipt execution.Execution
     var public execution.ValueIdentity = PresentIdentity(receipt.Policy)
     var protected execution.TypedValue = PresentValue(journal.Policy)
     return identity.PolicyValueValid(protected) && protected.Type == public.Type && protected.Digest == public.Digest
-}
-
-func OperationsValid(operations []execution.Operation, entries []execution.JournalEntry) bool {
-    return [true exactly when {operations} and {entries} have equal length and matching public Operation fields in order; every protected input/output canonical value recomputes its public Type and Digest;
-        frozen 0.0.2 operation identities are contiguous, equal-ID states are adjacent and preserve kind/location/inputs, every Started has exactly one later Completed, Failed, or Indeterminate terminal;
-        Completed alone has a complete typed output when the boundary returns a value, Failed alone has its exact failure, and Indeterminate is only an external Effect with INDETERMINATE_EFFECT on the same ID;
-        no canonical value occurs in the public operations and no missing, duplicate, backward, post-terminal, fabricated completion, or receipt-terminal pseudo-operation is accepted]
-}
-
-func OperationMismatch(operations []execution.Operation, entries []execution.JournalEntry) text {
-    return [the exact first differing or invalid field path in {operations} and {entries}, using Operations.length or Operations\[canonical index\].ID, .Kind, .Location, .Status, .Inputs,
-        .Output, or .Failure in order; an allocation gap, duplicate, backward identity, or invalid transition names the first offending .ID or .Status]
 }
 
 func TranscriptValid(operations []execution.Operation, transcript []debug.EffectResult) bool {
@@ -188,14 +194,14 @@ func ValidateReceipt(plan model.LoadPlan, bindings []debug.Binding, journal exec
         receipt.AuthoritiesIdentity.Type != "[]text" || receipt.AuthoritiesIdentity.Digest != identity.AuthoritiesDigest(receipt.Authorities) {
         return []diagnostic.Diagnostic{Mismatch("Authorities")}
     }
-    if !PolicyValid(journal, receipt) {
+    if !PolicyValid(target, journal, receipt) {
         return []diagnostic.Diagnostic{Mismatch("Policy")}
     }
     if receipt.LoadedCharacters != target.LoadedCharacters || receipt.ProjectCharacters != target.ProjectCharacters {
         return []diagnostic.Diagnostic{Mismatch("Characters")}
     }
-    if !identity.OperationOrderValid(receipt.Operations) || !OperationsValid(receipt.Operations, journal.Entries) {
-        return []diagnostic.Diagnostic{Mismatch(OperationMismatch(receipt.Operations, journal.Entries))}
+    if !identity.OperationOrderValid(receipt.Operations) || !legacy_bridge.OperationsValid(receipt.Operations, journal.Entries) {
+        return []diagnostic.Diagnostic{Mismatch(legacy_bridge.OperationMismatch(receipt.Operations, journal.Entries))}
     }
     if !TranscriptValid(receipt.Operations, transcript) {
         return []diagnostic.Diagnostic{Mismatch("Transcript")}
@@ -207,17 +213,6 @@ func ValidateReceipt(plan model.LoadPlan, bindings []debug.Binding, journal exec
         return []diagnostic.Diagnostic{Mismatch("Terminal")}
     }
     return []diagnostic.Diagnostic{}
-}
-
-func LegacyJournal(journal execution.ExecutionJournal) []text {
-    var result []text = derive [the ordered decoded text payloads of completed legacy records in {journal.Entries}, after every TypedValue digest is recomputed; no other entry contributes text]
-    return result
-}
-
-func Execute(program model.Program, initialSlots []model.InitialSlot, journal []text, transcript []debug.EffectResult) model.Execution {
-    var result model.Execution = derive [produce the unique released Oi 0.0.1 debugger replay projection of typed {program}, crossed {initialSlots}, protected {journal}, and typed {transcript};
-        preserve every published validation, copied-value, identity, journal, diagnostic, event, missing-transcript, and terminal observation exactly]
-    return result
 }
 
 func Result(value model.Execution) report.DebugTrace {
@@ -232,7 +227,7 @@ func Result(value model.Execution) report.DebugTrace {
 
 func Trace(target fs.Path, bindings []debug.Binding, journal execution.ExecutionJournal, receipt execution.ExecutionReceipt,
     transcript []debug.EffectResult) report.DebugTrace {
-    var compiled outcome[model.LoadPlan] = capture(CompileTarget(target, bindings, receipt.Mappings, receipt.Authorities))
+    var compiled outcome[model.LoadPlan] = capture(CompileTarget(target, bindings, receipt.Mappings, receipt.Authorities, transcript))
     if compiled.Ok {
         var plan model.LoadPlan = compiled.Value
         if plan.Status == model.LoadStatus.Invalid || len(plan.Diagnostics) != 0 {
@@ -241,12 +236,18 @@ func Trace(target fs.Path, bindings []debug.Binding, journal execution.Execution
         if plan.BindingStatus == model.BindingStatus.Rejected || len(plan.BindingDiagnostics) != 0 {
             return report.Failed([]report.Event{}, plan.BindingDiagnostics)
         }
+        if plan.Target.LanguageVersion == "Oi 0.0.1" {
+            if !legacy_bridge.Valid(journal) {
+                var operations []execution.Operation = legacy_bridge.Operations(journal)
+                return report.LegacyFailed([]report.Event{},
+                    []diagnostic.Diagnostic{Mismatch(legacy_bridge.OperationMismatch(operations, journal.Entries))})
+            }
+            return legacy_bridge.Result(legacy_runtime.Execute(plan.Program, plan.InitialSlots,
+                legacy_bridge.TextValues(journal), plan.LegacyTranscript))
+        }
         var receiptDiagnostics []diagnostic.Diagnostic = ValidateReceipt(plan, bindings, journal, receipt, transcript)
         if len(receiptDiagnostics) != 0 {
             return report.InvalidReceipt([]report.Event{}, receiptDiagnostics)
-        }
-        if plan.Target.LanguageVersion == "Oi 0.0.1" {
-            return Result(Execute(plan.Program, plan.InitialSlots, LegacyJournal(journal), transcript))
         }
         return report.Passed([]report.Event{})
     } else {

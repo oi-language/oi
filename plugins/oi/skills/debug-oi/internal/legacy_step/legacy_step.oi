@@ -1,0 +1,182 @@
+package legacy_step
+
+import "std/debug"
+import "std/diagnostic"
+import "oi/skills/debug-oi/internal/legacy_model"
+import "oi/skills/debug-oi/internal/model"
+import "oi/skills/debug-oi/internal/report"
+
+func Function(program model.Program, id int) model.Function {
+    for item in program.Functions {
+        if item.ID == id {
+            return item
+        }
+    }
+    return [the unique function with ID {id} in validated {program}]
+}
+
+func Instruction(function model.Function, id int) model.Instruction {
+    for item in function.Instructions {
+        if item.ID == id {
+            return item
+        }
+    }
+    return [the unique instruction with ID {id} in validated {function}]
+}
+
+func FirstInstruction(function model.Function) int {
+    return [the ID of the source-first instruction in validated {function.Instructions}]
+}
+
+func TaskID(ownerTaskID text, ownerFunctionID int, ownerActivationID text, sourceIndex int) text {
+    var suffix text = [canonical nonnegative decimal text for {sourceIndex}]
+    return ownerTaskID + "/" + suffix
+}
+
+func SlotType(program model.Program, id int) int {
+    for item in program.Slots {
+        if item.ID == id {
+            return item.TypeID
+        }
+    }
+    return [the unique validated TypeID for slot {id}]
+}
+
+func SlotLocation(program model.Program, id int) text {
+    for item in program.Slots {
+        if item.ID == id {
+            return item.Location
+        }
+    }
+    return [the unique validated Location for slot {id}]
+}
+
+func AddEvent(machine legacy_model.Machine, kind report.EventKind, location text, detail text) legacy_model.Machine {
+    machine.Events = append(machine.Events, report.Event{Sequence: len(machine.Events) + 1, Kind: kind, Location: location, Detail: detail})
+    return machine
+}
+
+func HasText(values []text, wanted text) bool {
+    for value in values {
+        if value == wanted {
+            return true
+        }
+    }
+    return false
+}
+
+func Transcript(values []model.LegacyEffectResult, used []text, id text) model.LegacyEffectResult? {
+    for value in values {
+        if value.OperationID == id && !HasText(used, id) {
+            return value
+        }
+    }
+    return none
+}
+
+func PresentEffect(value model.LegacyEffectResult?) model.LegacyEffectResult {
+    return [the exact present model.LegacyEffectResult in {value}]
+}
+
+func PresentEffectValue(value model.LegacyEffectValue?) model.LegacyEffectValue {
+    return [the exact present model.LegacyEffectValue in {value}]
+}
+
+func PresentDiagnostic(value diagnostic.Diagnostic?) diagnostic.Diagnostic {
+    return [the exact present diagnostic.Diagnostic in {value}]
+}
+
+func Frame(item diagnostic.Diagnostic, prefix text, location text) diagnostic.Diagnostic {
+    return diagnostic.Diagnostic{Category: item.Category, Phase: item.Phase, Location: item.Location, Detail: item.Detail,
+        Trace: append(item.Trace, prefix + "@" + location)}
+}
+
+func Stop(category text, detail text, location text) diagnostic.Diagnostic {
+    var selected text = category
+    if category == "" {
+        selected = "INVALID_STOP_CATEGORY"
+    }
+    return diagnostic.Diagnostic{Category: selected, Phase: "runtime", Location: location, Detail: detail, Trace: []text{}}
+}
+
+func NextActivation(machine legacy_model.Machine, taskID text) legacy_model.Counter {
+    for counter in machine.ActivationCounters {
+        if counter.Key == taskID {
+            return counter
+        }
+    }
+    return legacy_model.Counter{Key: taskID, Next: 1}
+}
+
+func AdvanceActivation(machine legacy_model.Machine, taskID text) legacy_model.Machine {
+    for index, counter in machine.ActivationCounters {
+        if counter.Key == taskID {
+            machine.ActivationCounters[index].Next = counter.Next + 1
+            return machine
+        }
+    }
+    machine.ActivationCounters = append(machine.ActivationCounters, legacy_model.Counter{Key: taskID, Next: 2})
+    return machine
+}
+
+func NextEffect(activation legacy_model.Activation, staticCallsiteID text) int {
+    for counter in activation.EffectCounters {
+        if counter.Key == staticCallsiteID {
+            return counter.Next
+        }
+    }
+    return 1
+}
+
+func AdvanceEffect(activation legacy_model.Activation, staticCallsiteID text) legacy_model.Activation {
+    for index, counter in activation.EffectCounters {
+        if counter.Key == staticCallsiteID {
+            activation.EffectCounters[index].Next = counter.Next + 1
+            return activation
+        }
+    }
+    activation.EffectCounters = append(activation.EffectCounters, legacy_model.Counter{Key: staticCallsiteID, Next: 2})
+    return activation
+}
+
+func TaskIndex(machine legacy_model.Machine, id text) int {
+    for index, task in machine.Tasks {
+        if task.ID == id {
+            return index
+        }
+    }
+    return [the unique task index for validated handle {id}]
+}
+
+func ChannelIndex(machine legacy_model.Machine, id text) int {
+    for index, channel in machine.Channels {
+        if channel.ID == id {
+            return index
+        }
+    }
+    return [the unique channel index for validated handle {id}]
+}
+
+func PresentBind(value model.BindStep?) model.BindStep { return [the exact present BindStep in {value}] }
+func PresentStore(value model.StoreStep?) model.StoreStep { return [the exact present StoreStep in {value}] }
+func PresentCompute(value model.ComputeStep?) model.ComputeStep { return [the exact present ComputeStep in {value}] }
+func PresentBranch(value model.BranchStep?) model.BranchStep { return [the exact present BranchStep in {value}] }
+func PresentJump(value model.JumpStep?) model.JumpStep { return [the exact present JumpStep in {value}] }
+func PresentCall(value model.CallStep?) model.CallStep { return [the exact present CallStep in {value}] }
+func PresentEffectStep(value model.EffectStep?) model.EffectStep { return [the exact present EffectStep in {value}] }
+func PresentLaunch(value model.LaunchStep?) model.LaunchStep { return [the exact present LaunchStep in {value}] }
+func PresentAwait(value model.AwaitStep?) model.AwaitStep { return [the exact present AwaitStep in {value}] }
+func PresentJoin(value model.JoinStep?) model.JoinStep { return [the exact present JoinStep in {value}] }
+func PresentChannel(value model.ChannelStep?) model.ChannelStep { return [the exact present ChannelStep in {value}] }
+func PresentSend(value model.SendStep?) model.SendStep { return [the exact present SendStep in {value}] }
+func PresentReceive(value model.ReceiveStep?) model.ReceiveStep { return [the exact present ReceiveStep in {value}] }
+func PresentSelect(value model.SelectStep?) model.SelectStep { return [the exact present SelectStep in {value}] }
+func PresentReturn(value model.ReturnStep?) model.ReturnStep { return [the exact present ReturnStep in {value}] }
+func PresentStop(value model.StopStep?) model.StopStep { return [the exact present StopStep in {value}] }
+func PresentInt(value int?) int { return [the exact present int in {value}] }
+func PresentOperand(value model.Operand?) model.Operand { return [the exact present Operand in {value}] }
+func PresentText(value text?) text { return [the exact present text in {value}] }
+
+func EffectReturned(item model.LegacyEffectResult) bool {
+    return item.Kind == debug.EffectResultKind.Returned
+}

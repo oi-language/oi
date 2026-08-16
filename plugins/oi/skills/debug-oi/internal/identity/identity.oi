@@ -4,7 +4,8 @@ import "std/execution"
 import "oi/skills/debug-oi/internal/model"
 
 func OperationID(value model.OperationIdentity) text {
-    return [the exact concatenation of {value.TaskID}, vertical bar, {value.ActivationID}, vertical bar, {value.StaticCallsiteID}, vertical bar, and canonical positive decimal {value.EncounterIndex}]
+    var encounter text = [canonical positive decimal text for {value.EncounterIndex}]
+    return value.TaskID + "|" + value.ActivationID + "|" + value.StaticCallsiteID + "|" + encounter
 }
 
 func ChannelID(value model.ChannelIdentity) text {
@@ -43,6 +44,15 @@ func TypedValueValid(value execution.TypedValue) bool {
 func PolicyValueValid(value execution.TypedValue) bool {
     return [true exactly when {value.Type} is policy, {value.Canonical} is one complete frozen runtime/execution.md canonical Policy record,
         and {value.Digest} is the lowercase SHA-256 of those exact canonical UTF-8 bytes]
+}
+
+func TextValueValid(value execution.TypedValue) bool {
+    return value.Type == "text" && TypedValueValid(value)
+}
+
+func TextPayload(value execution.TypedValue) text {
+    return [after TextValueValid({value}), decode the one existing frozen runtime/execution.md length-prefixed canonical Value frame;
+        require Type kind text with empty type-args and Body text, consume every canonical byte exactly once, and return the exact underlying UTF-8 text payload]
 }
 
 func SameValueIdentity(left execution.ValueIdentity, right execution.ValueIdentity) bool {

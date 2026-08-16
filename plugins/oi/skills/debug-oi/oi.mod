@@ -1,6 +1,14 @@
 module oi/skills/debug-oi
 oi 0.0.2
 source internal/identity/identity.oi
+source internal/legacy_action/legacy_action.oi
+source internal/legacy_bridge/legacy_bridge.oi
+source internal/legacy_channel/legacy_channel.oi
+source internal/legacy_model/legacy_model.oi
+source internal/legacy_runtime/legacy_runtime.oi
+source internal/legacy_step/legacy_step.oi
+source internal/legacy_validate/legacy_validate.oi
+source internal/legacy_value/legacy_value.oi
 source internal/model/model.oi
 source internal/replay/replay.oi
 source internal/report/report.oi

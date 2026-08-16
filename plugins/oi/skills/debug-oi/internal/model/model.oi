@@ -1,6 +1,7 @@
 package model
 
 import "std/diagnostic"
+import "std/debug"
 import "std/execution"
 import "oi/skills/debug-oi/internal/report"
 
@@ -374,14 +375,27 @@ type BindingStatus enum {
 type InitialSlot struct {
     SlotID int
     TypeID int
-    Value execution.TypedValue
+    Canonical text
     NamedIdentity TypeIdentity?
+}
+
+type LegacyEffectValue struct {
+    Canonical text
+    NamedIdentity TypeIdentity?
+}
+
+type LegacyEffectResult struct {
+    Kind debug.EffectResultKind
+    OperationID text
+    Value LegacyEffectValue?
+    Failure diagnostic.Diagnostic?
 }
 
 type TargetIdentity struct {
     LanguageVersion text
     Module text
     Entry text
+    EntryLocation text
     Manifest []text
     Artifacts []execution.ArtifactIdentity
     Inputs []execution.ValueIdentity
@@ -397,6 +411,7 @@ type LoadPlan struct {
     Target TargetIdentity
     Program Program
     InitialSlots []InitialSlot
+    LegacyTranscript []LegacyEffectResult
     Diagnostics []diagnostic.Diagnostic
     BindingDiagnostics []diagnostic.Diagnostic
 }

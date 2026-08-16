@@ -1,0 +1,61 @@
+package legacy_bridge
+
+import "std/execution"
+import "oi/skills/debug-oi/internal/identity"
+import "oi/skills/debug-oi/internal/model"
+import "oi/skills/debug-oi/internal/report"
+
+func PresentValue(value execution.TypedValue?) execution.TypedValue {
+    return [the exact present execution.TypedValue in {value}]
+}
+
+func OperationsValid(operations []execution.Operation, entries []execution.JournalEntry) bool {
+    return [true exactly when {operations} and {entries} have equal length and matching public Operation fields in order; every protected input/output canonical value recomputes its public Type and Digest;
+        frozen 0.0.2 operation identities are contiguous, equal-ID states are adjacent and preserve kind/location/inputs, every Started has exactly one later Completed, Failed, or Indeterminate terminal;
+        Completed alone has a complete typed output when the boundary returns a value, Failed alone has its exact failure, and Indeterminate is only an external Effect with INDETERMINATE_EFFECT on the same ID;
+        no canonical value occurs in the public operations and no missing, duplicate, backward, post-terminal, fabricated completion, or receipt-terminal pseudo-operation is accepted]
+}
+
+func OperationMismatch(operations []execution.Operation, entries []execution.JournalEntry) text {
+    return [the exact first differing or invalid field path in {operations} and {entries}, using Operations.length or Operations\[canonical index\].ID, .Kind, .Location, .Status, .Inputs,
+        .Output, or .Failure in order; an allocation gap, duplicate, backward identity, or invalid transition names the first offending .ID or .Status]
+}
+
+func Operations(journal execution.ExecutionJournal) []execution.Operation {
+    var result []execution.Operation = []execution.Operation{}
+    for entry in journal.Entries {
+        result = append(result, entry.Operation)
+    }
+    return result
+}
+
+func Valid(journal execution.ExecutionJournal) bool {
+    if journal.Policy != none && !identity.PolicyValueValid(PresentValue(journal.Policy)) {
+        return false
+    }
+    var operations []execution.Operation = Operations(journal)
+    return identity.OperationOrderValid(operations) && OperationsValid(operations, journal.Entries)
+}
+
+func TextValues(journal execution.ExecutionJournal) []text {
+    var result []text = []text{}
+    for entry in journal.Entries {
+        if entry.Operation.Status == execution.OperationStatus.Completed && entry.Output != none {
+            var output execution.TypedValue = PresentValue(entry.Output)
+            if identity.TextValueValid(output) {
+                result = append(result, identity.TextPayload(output))
+            }
+        }
+    }
+    return result
+}
+
+func Result(value model.Execution) report.DebugTrace {
+    if len(value.RequiredTranscriptEntries) != 0 {
+        return report.LegacyWaiting(value.Events, value.RequiredTranscriptEntries)
+    }
+    if len(value.Diagnostics) != 0 {
+        return report.LegacyFailed(value.Events, value.Diagnostics)
+    }
+    return report.LegacyPassed(value.Events)
+}

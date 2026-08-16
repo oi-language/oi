@@ -80,3 +80,36 @@ func InvalidReceipt(events []Event, diagnostics []diagnostic.Diagnostic) DebugTr
         ReceiptDiagnostics: diagnostics,
     }
 }
+
+func LegacyPassed(events []Event) DebugTrace {
+    return DebugTrace{
+        Status: Status.Pass,
+        Events: events,
+        Diagnostics: []diagnostic.Diagnostic{},
+        RequiredTranscriptEntries: []text{},
+        ReceiptValid: false,
+        ReceiptDiagnostics: []diagnostic.Diagnostic{},
+    }
+}
+
+func LegacyFailed(events []Event, diagnostics []diagnostic.Diagnostic) DebugTrace {
+    return DebugTrace{
+        Status: Status.Fail,
+        Events: events,
+        Diagnostics: diagnostics,
+        RequiredTranscriptEntries: []text{},
+        ReceiptValid: false,
+        ReceiptDiagnostics: []diagnostic.Diagnostic{},
+    }
+}
+
+func LegacyWaiting(events []Event, required []text) DebugTrace {
+    return DebugTrace{
+        Status: Status.Incomplete,
+        Events: events,
+        Diagnostics: []diagnostic.Diagnostic{},
+        RequiredTranscriptEntries: required,
+        ReceiptValid: false,
+        ReceiptDiagnostics: []diagnostic.Diagnostic{},
+    }
+}
