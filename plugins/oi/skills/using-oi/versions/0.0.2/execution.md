@@ -40,7 +40,6 @@ letter="A"…"Z"|"a"…"z"; digit="0"…"9";
 identifier=(letter|"_"),{letter|digit|"_"}; int_lit=digit,{digit};
 text_char=any UTF-8 scalar except quote, backslash, CR, LF;
 text_lit='"',{text_char|'\"'|'\\'|'\n'|'\t'},'"';
-SemanticContent=SemanticItem,{SemanticItem};
 SemanticItem=semantic_char|semantic_escape|Interpolation;
 semantic_char=any UTF-8 scalar except bracket, brace, backslash;
 semantic_escape='\['|'\]'|'\{'|'\}'|'\\';
@@ -71,7 +70,7 @@ Parameter=identifier,Type; FuncDecl="func",identifier,Signature,Block;
 EntryDecl="func","main","(",[ParamList],")",Block;
 EffectDecl="effect",identifier,Signature,"{",UsesClause,terminator,ContractClause,terminator,"}";
 UsesClause="uses",Authority,{",",Authority}; Authority=identifier,{".",identifier};
-ContractClause="contract",SemanticExpr; Contract=SemanticExpr;
+Contract=SemanticExpr; ContractClause="contract",Contract;
 Block="{",{Statement,terminator},"}";
 ```
 
@@ -93,21 +92,26 @@ Stable map key/set element types: bool (`false<true`), mathematical int, text by
 Expression=UnaryExpr,{binary_op,UnaryExpr}; UnaryExpr=("!"|"-"),UnaryExpr|PrefixExpr;
 PrefixExpr=OiExpression|AwaitExpression|DeriveExpression|PrimaryExpr;
 PrimaryExpr=Operand,{".",identifier|"[",Expression,"]"|Arguments};
-Operand=identifier|text_lit|int_lit|"true"|"false"|"none"|"unit"|SemanticExpr|CompositeLit|ChannelExpr|"(",Expression,")";
+Operand=identifier|text_lit|int_lit|"true"|"false"|"none"|"unit"|Contract|CompositeLit|ChannelExpr|"(",Expression,")";
 Arguments="(",[Expression,{",",Expression},[","]],")";
 CallExpression=QualifiedName,Arguments; QualifiedName=identifier,{".",identifier};
 OiExpression="oi",CallExpression; AwaitExpression="await",(OiExpression|PrimaryExpr);
 DetachExpr="detach",OiExpression; DeriveExpression="derive",SemanticExpr;
 ChannelExpr="channel","[",Type,"]","(",Expression,")";
 CompositeLit=Type,"{",[Element,{",",Element},[","]],"}";
-Element=[Expression,":"],Expression; SemanticExpr="[",SemanticContent,"]";
+Element=[Expression,":"],Expression; SemanticExpr="[",SemanticItem,{SemanticItem},"]";
 ```
 
 Postfix precedes unary; left-associative binary precedence: `* / %`, `+ -`, comparisons/`~=`, `&&`, `||`. Composite positions are slice/set values, map key:value, or named struct fields once. A later equal map/set item fails `DUPLICATE_KEY` there. `none` needs optional target.
 
-`SemanticExpr`=one typed judgment/contract/`~=`; inputs=interpolations, no ambient/control/effect. Recursive result=scalar/enum/optional/fixed struct; else `UNBOUNDED_SEMANTIC_RESULT/type`@judgment `[`/exact target-type spelling. Ambiguity=`AMBIGUOUS_SEMANTIC_{VALUE|MATCH}`.
-
-`derive [...]`=unique interpolation→handle-free aggregate target. Type: absent/`:=`→`DERIVATION_TARGET_REQUIRED@derive/derive`; DERIVATION_EFFECT_FORBIDDEN/DERIVATION_CONTEXT_FORBIDDEN/DERIVATION_CONTROL_FORBIDDEN/DERIVATION_HANDLE_FORBIDDEN Location=first effect name/call, ambient phrase token, retry/control/dispatch/loop-control/handoff/stop/question token, handle token/earlier dependency; Detail=exact qualified spelling/phrase/token/constructor in order.
+SemanticExpr=one typed judgment; interpolation-only/no ambient/control/effect; recursive result=scalar/enum/optional/fixed-struct; ambiguity=AMBIGUOUS_SEMANTIC_{VALUE|MATCH}
+F=first token; E=exact source spelling; tuples(Category|Phase|Location|Detail):
+UNBOUNDED_SEMANTIC_RESULT|type|judgment [|E(target type)
+no explicit target/:=→(DERIVATION_TARGET_REQUIRED|type|derive|derive)
+DERIVATION_EFFECT_FORBIDDEN|type|F(referenced effect name/call)|E(qualified effect)
+DERIVATION_CONTEXT_FORBIDDEN|type|F(forbidden ambient/context phrase)|E(matched phrase)
+DERIVATION_CONTROL_FORBIDDEN|type|F(retry/control/dispatch/loop-control/handoff/stop/question)|E(offender)
+DERIVATION_HANDLE_FORBIDDEN|type|earlier(F(explicit target runtime-handle type),F(dependency handle))|E(handle constructor)
 
 ```ebnf
 Statement=Declaration|Assignment|IfStmt|SwitchStmt|ForStmt|SelectStmt|ReturnStmt|BreakStmt|ContinueStmt|StopStmt|HandoffStmt|ExpressionStmt;

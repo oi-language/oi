@@ -4,7 +4,7 @@ This shard defines `DeriveExpression` after complete core typing. It adds no eff
 
 ## Admission and inputs
 
-The explicit target type is fixed before evaluation. It may be any handle-free value, including struct, slice, map, set, optional, enum, primitive, or a named form recursively over them. A task/channel/endpoint or other runtime handle anywhere in the target is a type failure at `derive`. `:=` supplies no target and is rejected by the core rule.
+Evaluation begins only after core admission has fixed one explicit handle-free target type.
 
 The derivation input is exactly the immutable typed snapshots named by interpolation plus the already verified Oi snapshot. Every dynamic datum must be interpolated. Parent conversation, history, memory, expected values, local tool output, unmapped effects, project facts not passed as values, clock, randomness, and host enumeration order are unavailable.
 

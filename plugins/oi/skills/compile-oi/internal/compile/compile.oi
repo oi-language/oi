@@ -134,10 +134,10 @@ func Validate(target fs.Path, available []text) report.CompileReport {
 
 func ValidateTypePhase(graph load.Graph) []diagnostic.Diagnostic {
     var diagnostics []diagnostic.Diagnostic = LocalDiagnostics(graph.Sources, "type")
-    diagnostics = AppendDiagnostics(diagnostics, ValidateSemanticExpressions(graph.Sources))
     diagnostics = AppendDiagnostics(diagnostics, ValidateCollections(graph.Sources))
     diagnostics = AppendDiagnostics(diagnostics, ValidateDeclarations(graph.Sources))
     diagnostics = AppendDiagnostics(diagnostics, ValidateTypeReferences(graph.Sources))
+    diagnostics = AppendDiagnostics(diagnostics, ValidateSemanticExpressions(graph.Sources))
     diagnostics = AppendDiagnostics(diagnostics, ValidateTransfers(graph.Sources))
     diagnostics = AppendDiagnostics(diagnostics, ValidateTaskIntrinsics(graph.Sources))
     diagnostics = AppendDiagnostics(diagnostics, ValidateCalls(graph.Sources))
@@ -153,7 +153,12 @@ func ValidateSemanticExpressions(sources []model.SourceFile) []diagnostic.Diagno
     var located []LocatedDiagnostic = []LocatedDiagnostic{}
     for source in sources {
         for judgment in source.Judgments {
-            if judgment.HasTarget && !typecheck.BoundedSemanticResult(
+            if judgment.HasTarget && SemanticTargetResolvable(
+                sources,
+                source,
+                judgment.Target,
+                []text{},
+            ) && !typecheck.BoundedSemanticResult(
                 sources,
                 source,
                 judgment.Target,
@@ -188,6 +193,7 @@ func ValidateDerivation(
     derivation model.DerivationExpression,
 ) []LocatedDiagnostic {
     var diagnostics []LocatedDiagnostic = []LocatedDiagnostic{}
+    var targetAdmitted bool = false
     if !derivation.HasTarget {
         diagnostics = InsertLocatedDiagnostic(
             diagnostics,
@@ -202,35 +208,100 @@ func ValidateDerivation(
             },
         )
     } else {
-        var target model.TypeShape = UnderlyingTypeShape(
-            sources,
-            source,
-            derivation.Target,
-            []text{},
-        )
-        var handle RuntimeHandleSelection = FirstRuntimeHandle(target)
-        if handle.Found {
+        targetAdmitted = SemanticTargetResolvable(sources, source, derivation.Target, []text{})
+        if targetAdmitted {
+            var target model.TypeShape = UnderlyingTypeShape(
+                sources,
+                source,
+                derivation.Target,
+                []text{},
+            )
+            var handle RuntimeHandleSelection = FirstRuntimeHandle(target)
+            if handle.Found {
+                diagnostics = InsertLocatedDiagnostic(
+                    diagnostics,
+                    LocatedDiagnostic{
+                        Position: handle.Origin.Position,
+                        Diagnostic: diagnostic.New(
+                            "DERIVATION_HANDLE_FORBIDDEN",
+                            "type",
+                            handle.Origin.Position.Location,
+                            handle.Origin.Token,
+                        ),
+                    },
+                )
+            }
+        }
+    }
+    if targetAdmitted {
+        for dependency in derivation.Dependencies {
             diagnostics = InsertLocatedDiagnostic(
                 diagnostics,
-                LocatedDiagnostic{
-                    Position: handle.Origin.Position,
-                    Diagnostic: diagnostic.New(
-                        "DERIVATION_HANDLE_FORBIDDEN",
-                        "type",
-                        handle.Origin.Position.Location,
-                        handle.Origin.Token,
-                    ),
-                },
+                DerivationDependencyDiagnostic(dependency),
             )
         }
     }
-    for dependency in derivation.Dependencies {
-        diagnostics = InsertLocatedDiagnostic(
-            diagnostics,
-            DerivationDependencyDiagnostic(dependency),
+    return diagnostics
+}
+
+func SemanticTargetResolvable(
+    sources []model.SourceFile,
+    source model.SourceFile,
+    shape model.TypeShape,
+    visited []text,
+) bool {
+    if shape.Kind == model.TypeShapeKind.Named {
+        var identity text = QualifiedTypeName(source, shape.Name)
+        if ContainsText(visited, identity) {
+            return true
+        }
+        var resolved ResolvedType = ResolveUniqueTypeDeclaration(sources, identity)
+        if !resolved.Found ||
+            (ReferencePackage(source, shape.Name) != source.Package &&
+                !HasExportedType(sources, ReferencePackage(source, shape.Name), ReferenceName(shape.Name))) {
+            return false
+        }
+        return SemanticTargetResolvable(
+            sources,
+            sources[resolved.SourceIndex],
+            resolved.Shape,
+            append(visited, identity),
         )
     }
-    return diagnostics
+    for element in shape.Elements {
+        if !SemanticTargetResolvable(sources, source, element, visited) {
+            return false
+        }
+    }
+    return true
+}
+
+func ResolveUniqueTypeDeclaration(
+    sources []model.SourceFile,
+    identity text,
+) ResolvedType {
+    var count int = 0
+    var resolved ResolvedType = ResolvedType{
+        Found: false,
+        SourceIndex: 0,
+        Shape: EmptyTypeShape(),
+    }
+    for index in SourceIndexes(sources) {
+        for declaration in sources[index].Declarations {
+            if DeclarationKey(sources[index].Package, declaration.Name) == identity {
+                count = count + 1
+                if declaration.Kind == model.DeclarationKind.Type && declaration.HasUnderlying {
+                    resolved = ResolvedType{
+                        Found: true,
+                        SourceIndex: index,
+                        Shape: declaration.Underlying,
+                    }
+                }
+            }
+        }
+    }
+    resolved.Found = resolved.Found && count == 1
+    return resolved
 }
 
 func DerivationDependencyDiagnostic(
