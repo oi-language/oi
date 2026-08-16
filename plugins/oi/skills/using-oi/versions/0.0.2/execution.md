@@ -4,12 +4,12 @@ Identity is exactly `Oi 0.0.2`. This file is the sole base-language authority an
 
 ## deterministic load
 
-1. Resolve nearest `oi.mod`; exact version selects an installed snapshot. Logically read this file once, then module metadata once.
-2. A logical read starts at byte zero, advances through contiguous nonoverlapping chunks to true EOF, and closes with byte size, decoded-character count, and SHA-256. Invalid UTF-8, truncation, gap/overlap/rewind/repetition, missing EOF, or identity change stops before interpretation; only verified concatenation is visible.
-3. Stop only for exact `snapshot-metadata`/`version-discovery`/`manifest-inspection` without `.oi` interpretation. Otherwise load manifested sources in directive order; imports resolve only there or to versioned `std/`.
-4. Parse/type; union triggers from parsed nodes, resolved calls/imports, and run mode; close declared dependencies. Load runtime shards in row order, then std packages by UTF-8 path bytes, each once.
+1. From target directory/file parent, logical-read nearest `oi.mod` once; retain content/identity and parse only canonical `module`/exact `oi`. This is pre-recognition bootstrap.
+2. Logical-read selected `execution.md` once; recognize snapshot only after exact identity validates, then fully validate held module bytes. Never reread. Earlier version/spec failure is bootstrap-only.
+3. Logical read is contiguous nonoverlapping bytes zero→true EOF, closed with byte size, decoded characters, SHA-256. Invalid UTF-8, truncation, gap/overlap/rewind/repetition, missing EOF, or drift stops.
+4. `snapshot-metadata`, `version-discovery`, and `manifest-inspection` may stop. Otherwise load run-mode rows, validate module/load manifested sources, parse/type, union further node/call/import triggers, close dependencies, then remaining rows and std by UTF-8 path bytes, each once. Physical and receipt orders are distinct.
 
-Missing base/runtime is `MISSING_SPEC_SHARD`/`MISSING_RUNTIME_SHARD`; wrong identity, dependency cycle, duplicate/undeclared row, or contradiction is `INVALID_SPEC_SNAPSHOT`. Unsupported exact version is `UNSUPPORTED_VERSION`; never default/combine/reinterpret.
+Missing base/runtime: `MISSING_SPEC_SHARD`/`MISSING_RUNTIME_SHARD`; bad identity/cycle/row/contradiction: `INVALID_SPEC_SNAPSHOT`; unsupported: `UNSUPPORTED_VERSION`. Never default/combine/reinterpret.
 
 ## manifest
 
@@ -23,8 +23,8 @@ Missing base/runtime is `MISSING_SPEC_SHARD`/`MISSING_RUNTIME_SHARD`; wrong iden
 | `runtime/handoff.md` | handoff | `execution.md` |
 | `runtime/channel.md` | channel/endpoint, send/receive/select | `execution.md` |
 | `runtime/persistence.md` | durable/resume/debug/replay, invocation, or journaled operation | `execution.md` |
-| `runtime/execution.md` | 0.0.2 entry invocation or derive | `execution.md`, `runtime/persistence.md` |
-| `runtime/diagnostics.md` | debug/replay or diagnostic/capture/outcome/stop/task/user | `execution.md` |
+| `runtime/execution.md` | recognized terminal receipt, entry invocation, or derive | `execution.md`, `runtime/persistence.md` |
+| `runtime/diagnostics.md` | debug/replay, any diagnostic, or capture/outcome/stop/task/user | `execution.md` |
 | `std/<name>/<name>.oi` | reachable import `std/<name>` | `execution.md` |
 
 ## budgets
@@ -46,9 +46,10 @@ semantic_char=any UTF-8 scalar except bracket, brace, backslash;
 semantic_escape='\['|'\]'|'\{'|'\}'|'\\';
 Interpolation="{",identifier,{".",identifier|"[",(identifier|int_lit),"]"},"}";
 terminator=";"|inserted_line_terminator; separator=","|terminator;
+binary_op="*"|"/"|"%"|"+"|"-"|"=="|"!="|"<"|"<="|">"|">="|"~="|"&&"|"||";
 ```
 
-Identifiers are case-sensitive; `_` discards; initial uppercase exports. Unescaped semantic `[` is `NESTED_SEMANTIC_EXPRESSION`. Line end/EOF after a complete token inserts a terminator except inside unclosed delimiters or after comma/operator; `;` is equivalent.
+Identifiers are case-sensitive; `_` discards; uppercase exports. Unescaped semantic `[` is `NESTED_SEMANTIC_EXPRESSION`. Line end/EOF after a complete token inserts terminator except within delimiters or after comma/operator; `;` is equivalent.
 
 Keywords: `package import const type struct enum func effect uses contract var if else switch case default for in select return break continue stop handoff oi await detach derive text bool int unit task outcome channel sender receiver map set failure true false none`; builtins: `len append has put add remove capture send receive`.
 
@@ -74,15 +75,17 @@ ContractClause="contract",SemanticExpr; Contract=SemanticExpr;
 Block="{",{Statement,terminator},"}";
 ```
 
-Nearest 0.0.2 `oi.mod` has canonical `module <path>`, `oi 0.0.2`, then one+ `source <path>` (blanks/comments ignored). Module segments are nonempty ASCII alnum/`_`/`-`. Source paths are normalized relative UTF-8: no backslash, `.`, `..`, empty/edge segment, absolute/escape; unique and strictly UTF-8-byte ascending. Missing list: `MISSING_SOURCE_MANIFEST`; invalid path: `SOURCE_MANIFEST_PATH`; unordered/duplicate: `SOURCE_MANIFEST_ORDER`.
+0.0.2 `oi.mod`: canonical `module <path>`, `oi 0.0.2`, then one+ `source <path>`; blanks/comments ignored. Module segments are nonempty ASCII alnum/`_`/`-`/`.` with no edge/repeated dot. Source paths are normalized relative UTF-8: no backslash, `.`, `..`, empty/edge, absolute/escape; unique, strictly byte-ascending. Missing/invalid/unordered list: `MISSING_SOURCE_MANIFEST`/`SOURCE_MANIFEST_PATH`/`SOURCE_MANIFEST_ORDER`. Module-manifest failure location is `oi.mod:1:1`; missing-list Detail is `source manifest required`.
 
-Manifested `main.oi` is package `main`. Else directory-final segment=basename=package; one source per package directory (`SOURCE_PACKAGE_MISMATCH`/`SOURCE_PACKAGE_DUPLICATE`). Imports resolve uniquely to manifested sources or fail `SOURCE_IMPORT_UNDECLARED`; unlisted files are absent. Graph is reachable, acyclic, version-uniform. File/graph/line overflow is `SOURCE_FILE_BUDGET`/`SOURCE_GRAPH_BUDGET`/`SOURCE_LINE_BUDGET`; invalid logical close is `SOURCE_TRUNCATED`, drift `SOURCE_CHANGED_DURING_LOAD`.
+Manifested `main.oi` is package `main`; elsewhere directory-final=basename=package, one source/directory (`SOURCE_PACKAGE_MISMATCH`/`SOURCE_PACKAGE_DUPLICATE`). Imports resolve uniquely or `SOURCE_IMPORT_UNDECLARED`; unlisted files are absent. Reachable graph is acyclic/version-uniform. File/graph/line overflow: `SOURCE_FILE_BUDGET`/`SOURCE_GRAPH_BUDGET`/`SOURCE_LINE_BUDGET`; bad close/drift: `SOURCE_TRUNCATED`/`SOURCE_CHANGED_DURING_LOAD`.
 
-`text` is exact UTF-8; `bool=true|false`; `int` unbounded; `unit` singleton; `[]T` finite ordered; `map[K]V` and `set[T]` finite; `T?=none|T`. Structs have exact fields; enums use `Type.Member`. Declared types are distinct; explicit construction converts equal underlying shape plus contract. `[]` binds before `?`.
+`text` is exact UTF-8; `bool=true|false`; `int` unbounded; `unit` singleton; `[]T` finite ordered; `map[K]V`/`set[T]` finite; `T?=none|T`. Structs have exact fields; enums use `Type.Member`. Declared types are distinct; explicit construction converts equal underlying shape plus contract. `[]` binds before `?`.
+
+Every nonhandle value has value-copy semantics: assignment, parameter/result/effect crossing, composite insertion, and collection operations copy a recursive snapshot with no observable alias. This includes primitive, enum, named, optional, struct, slice, map, set, failure, and outcome values. Handles follow their declared identity/affinity instead.
 
 Stable keys/elements: bool (`false<true`), mathematical int, unsigned-UTF-8-byte text, enum declaration order, or a named type over one. Other types are unstable. Maps/sets are empty-zero immutable noncomparable values; copies share no mutable state; durability is recursive. Other zeroes: `""`, `false`, `0`, `unit`, empty slice, `none`, first enum, fieldwise struct. Handles are zero-less.
 
-`append` returns a new same-type slice. `len` counts slice/map/set elements or text UTF-8 bytes. `has(map,key)`/`has(set,value)` is bool; `put` returns inserted/replaced map; `add` returns a set containing value; `remove` returns map/set without target and is unchanged if absent. Slice/map indexing is typed; bounds failure is runtime, absent map key is `MISSING_KEY`. Integer operations are mathematical; division truncates toward zero. Comparable: bool/int/text/unit, enum, named/optional/struct recursively; collections, handles, failure are not. Operators require identical types; boolean operators short-circuit.
+`append` returns new same-type slice. `len` counts collection elements/text bytes. `has` tests membership; `put` inserts/replaces; `add` includes; `remove` excludes or is unchanged, all returning new values. Slice/map index is typed; bounds fails runtime, absent key `MISSING_KEY`. Int math divides toward zero. Comparable recursively: bool/int/text/unit, enum, named/optional/struct; not collections/handles/failure. Operators require identical types; bool ops short-circuit.
 
 ```ebnf
 Expression=UnaryExpr,{binary_op,UnaryExpr}; UnaryExpr=("!"|"-"),UnaryExpr|PrefixExpr;
@@ -100,14 +103,14 @@ Element=[Expression,":"],Expression; SemanticExpr="[",SemanticContent,"]";
 
 Postfix precedes unary; binary precedence is `* / %`, `+ -`, comparisons/`~=`, `&&`, `||`, left-associative. Composite positions are slice/set values, map key:value pairs, or named struct fields once. Later equal map/set literal item fails `DUPLICATE_KEY` at that item. `none` needs optional target.
 
-A plain semantic expression is one typed Agent judgment/contract/`~=` predicate. Generation is bounded to primitive, enum, named/optional bounded value, or recursively bounded fixed struct; contained slice/map/set is static `UNBOUNDED_SEMANTIC_RESULT` at `[`. Dynamic inputs are only interpolations, never ambient context. It cannot hide control/retry/effect/dispatch/handoff/stop. Uncertainty is `AMBIGUOUS_SEMANTIC_VALUE`/`AMBIGUOUS_SEMANTIC_MATCH`.
+A semantic expression is one typed judgment/contract/`~=` predicate. Generation permits primitive, enum, named/optional bounded value, or bounded fixed struct; nested slice/map/set is static `UNBOUNDED_SEMANTIC_RESULT` at `[`. Inputs are interpolations only; no ambient context or hidden control/retry/effect/dispatch/handoff/stop. Uncertainty: `AMBIGUOUS_SEMANTIC_VALUE`/`AMBIGUOUS_SEMANTIC_MATCH`.
 
 `derive [...]` requires explicit target, never `:=`; it uniquely transforms interpolated typed inputs under the loaded snapshot into any handle-free value. Parse/decode/normalize/group/sort/canonical render are allowed; policy choice and effect/control/retry/dispatch/handoff/stop are not. Non-unique result is runtime `NONDETERMINISTIC_DERIVATION`. Contracts/`~=` stay bounded.
 
 ```ebnf
 Statement=Declaration|Assignment|IfStmt|SwitchStmt|ForStmt|SelectStmt|ReturnStmt|BreakStmt|ContinueStmt|StopStmt|HandoffStmt|ExpressionStmt;
 Declaration=ShortDecl|VarDecl|ConstDecl; ShortDecl=identifier,":=",Expression; VarDecl="var",identifier,Type,["=",Expression];
-Assignment=PrimaryExpr,"=",Expression; IfStmt="if",Expression,Block,[[terminator],"else",(IfStmt|Block)];
+Assignment=Assignable,"=",Expression; Assignable=identifier,{".",identifier|"[",Expression,"]"}; IfStmt="if",Expression,Block,[[terminator],"else",(IfStmt|Block)];
 SwitchStmt="switch",[Expression],"{",{CaseClause},[DefaultClause],"}"; CaseClause="case",Expression,{",",Expression},":",{Statement,terminator}; DefaultClause="default",":",{Statement,terminator};
 ForStmt="for",ForBinding,"in",Expression,Block|"for",[Expression],Block; ForBinding=identifier|identifier,",",identifier;
 SelectStmt="select","{",{SelectCase},[DefaultClause],"}"; SelectCase="case",([identifier,":="],(ReceiveOp|AwaitExpression)|SendOp),":",{Statement,terminator};
@@ -116,14 +119,14 @@ ReturnStmt="return",[Expression]; BreakStmt="break"; ContinueStmt="continue"; St
 HandoffStmt="handoff",CallExpression; ExpressionStmt=CallExpression|OiExpression|AwaitExpression|DetachExpr;
 ```
 
-`:=` is local and rejects semantic/derive. Assignment/arguments require identical type; literals need unique target; named conversion is explicit. `if` is bool; switch evaluates once, first equal, final default, no fallthrough. At loop entry the collection value is snapshotted: slice one-binding yields values, two-binding yields ascending int index/value; map requires key/value and canonical key order; set requires one value and canonical element order. Rebinding the source cannot change that encounter. `break` targets loop/switch/select; `continue` loop.
+`:=` and `var` declare mutable locals; const/parameters are not assignable. Assignment root must be such a live local; field/index selectors must type-check through structs/slices and rebuild that root value. Map/set/indexed text/handles are never assignment targets; update collections only through value-returning `append`/`put`/`add`/`remove`. Assignment/arguments require identical type; literals need unique target; named conversion is explicit. `if` is bool; switch evaluates once, first equal, final default, no fallthrough. Loop entry snapshots: slice value or ascending index/value; map canonical key/value; set canonical value. Rebinding source does not change the encounter. `break` targets loop/switch/select; `continue` loop.
 
 Functions evaluate arguments left-to-right, have at most one result, and require all result paths; unit falls through. Effects are atomic declarations with one nonempty `uses` and one semantic contract; signature, authorities, and contract identify the mapping. `capture` is the only failure observation and performs no retry.
 
-Exactly one lowercase resultless `main` EntryDecl exists only in executable package `main`; it is not an ordinary FuncDecl. Its ordered typed caller inputs are host-only; it cannot be imported/selected/addressed/called, and complex input is a program struct. Validate mappings/authorities, bind inputs in order, then admit sealed execution. Bad bindings fail. Completion is only a mapped program-declared concrete typed effect; `Reply`-like names are conventional, not built-ins/return channels.
+Exactly one lowercase resultless `main` EntryDecl exists only in executable package `main`, not ordinary FuncDecl. Ordered typed inputs are host-only; entry cannot be imported/selected/addressed/called. Complex input is program struct. Validate mappings/authorities, bind in order, admit sealed execution. Completion is mapped program-declared typed effect; Reply-like names are conventional only.
 
 `oi` launches an ordinary function as `task[T]`; `await task[T]` returns T; other targets fail. Detach is valueless `detach oi Call`; handoff is terminal to unit function. Durable values are recursively handle-free. Channels are bounded positive-capacity typed locals; receiver affine; endpoints never enter data/effect/semantic/detach/handoff. Task/channel authority is reachable demand∩current. Select permits send/receive/await and one final default.
 
-Evaluation is source/left-to-right. Named contracts run at construction/conversion/argument/assignment/return/effect boundaries. Root entry and children receive only verified loaded artifacts, explicit typed arguments, exact mappings/authorities/policy, and current trace/checkpoints/journal. Semantic, derive, effect, task, await, channel commit, detach, and handoff have stable operation identity. An external effect is complete only after its full typed boundary result; started without trusted completion is indeterminate, never guessed or retried. Reply payload lands unchanged; an `ExecutionReceipt` sidecar is separate and unreadable by the program.
+Evaluation is source/left-to-right. Named contracts run at construction/conversion/argument/assignment/return/effect boundaries. Context contains only verified artifacts, typed arguments, mappings/authorities/policy, trace/checkpoints/journal. Semantic/derive/effect/task/await/channel/detach/handoff have stable IDs. External effect completes only with full typed result; untrusted completion is indeterminate, never guessed/retried. Reply lands unchanged; receipt is separate/unreadable.
 
 Phases: `parse → module → type → effect mapping → input binding → execution admission → runtime`; failure bars later phases. Static diagnostics choose phase, normalized path bytes, line, column. Runtime chooses journal order, source position, TaskID. Location is one-based UTF-8-scalar `path:line:column`; failure is Category/Phase/Location/Detail/Trace. Failure after recognized 0.0.2 identity produces a terminal receipt; bootstrap failure before snapshot recognition remains a bootstrap diagnostic.
