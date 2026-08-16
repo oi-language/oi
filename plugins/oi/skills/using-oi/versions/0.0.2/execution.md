@@ -75,9 +75,9 @@ ContractClause="contract",SemanticExpr; Contract=SemanticExpr;
 Block="{",{Statement,terminator},"}";
 ```
 
-0.0.2 `oi.mod`: canonical `module <path>`, exact `oi 0.0.2`, one+ `source <path>`; ignore blank/comments. Module segment nonempty ASCII alnum/`_`/`-`/`.`, no edge/repeated dot. Sources unique, strict byte order, normalized relative UTF-8; forbid backslash, `.`, `..`, empty/edge, absolute/escape. Missing/invalid/unordered: `MISSING_SOURCE_MANIFEST`/`SOURCE_MANIFEST_PATH`/`SOURCE_MANIFEST_ORDER` at `oi.mod:1:1`; missing Detail `source manifest required`.
+0.0.2 `oi.mod`: canonical `module <path>`, exact `oi 0.0.2`, one+ `source <path>`; ignore blank/comments. Module segment nonempty ASCII alnum/`_`/`-`/`.`, no edge/repeated dot. Sources unique, strictly byte-ascending, normalized relative UTF-8; forbid backslash, `.`, `..`, empty/edge, absolute/escape. Missing/invalid/unordered: `MISSING_SOURCE_MANIFEST`/`SOURCE_MANIFEST_PATH`/`SOURCE_MANIFEST_ORDER`. Module-manifest failure location is `oi.mod:1:1`; missing Detail `source manifest required`.
 
-`main.oi` package=`main`; elsewhere directory-final=basename=package; one source/directory (`SOURCE_PACKAGE_MISMATCH`/`SOURCE_PACKAGE_DUPLICATE`). Imports resolve uniquely or `SOURCE_IMPORT_UNDECLARED`; unlisted files absent. Graph acyclic/version-uniform. File/graph/line overflow: `SOURCE_FILE_BUDGET`/`SOURCE_GRAPH_BUDGET`/`SOURCE_LINE_BUDGET`; bad close/drift: `SOURCE_TRUNCATED`/`SOURCE_CHANGED_DURING_LOAD`.
+`main.oi` package=`main`; elsewhere directory-final=basename=package; one source/directory (`SOURCE_PACKAGE_MISMATCH`/`SOURCE_PACKAGE_DUPLICATE`). Imports resolve uniquely or `SOURCE_IMPORT_UNDECLARED`; unlisted files absent. Reachable graph is acyclic/version-uniform. File/graph/line overflow: `SOURCE_FILE_BUDGET`/`SOURCE_GRAPH_BUDGET`/`SOURCE_LINE_BUDGET`; bad close/drift: `SOURCE_TRUNCATED`/`SOURCE_CHANGED_DURING_LOAD`.
 
 `text` exact UTF-8; `bool=true|false`; `int` unbounded; `unit` singleton; `[]T` finite ordered; `map[K]V`/`set[T]` finite; `T?=none|T`. Struct fields exact; enums use `Type.Member`. Declared types distinct; explicit construction converts equal underlying shape+contract. `[]` binds before `?`.
 
@@ -87,7 +87,7 @@ Stable map key/set element types: bool (`false<true`), mathematical int, text by
 
 `append`: new same-type slice; `len`: element count/text bytes; `has`: membership. Value-returning `put` inserts/replaces, `add` includes, `remove` excludes/unchanged. Slice/map indexing is typed; bounds fails runtime; absent key `MISSING_KEY`. Int division is toward zero. Recursively comparable: bool/int/text/unit, enum, named/optional/struct; not collection/handle/failure. Operators need identical types; bool ops short-circuit.
 
-`UNSTABLE_MAP_KEY`/`UNSTABLE_SET_ELEMENT`: phase `type`; Location key-type/element-type first token respectively; Detail exact key-type/element-type source spelling respectively. Collection-builtin arity/argument/result uses `ARGUMENT_ARITY_MISMATCH`/`ARGUMENT_TYPE_MISMATCH`/`RESULT_TYPE_MISMATCH` respectively; phase `type`, call site, builtin-name Detail.
+`UNSTABLE_MAP_KEY`/`UNSTABLE_SET_ELEMENT`: phase `type`; respective Location=first token of map key/set element type, Detail=its exact source spelling. Builtin arity/argument/result → `ARGUMENT_ARITY_MISMATCH`/`ARGUMENT_TYPE_MISMATCH`/`RESULT_TYPE_MISMATCH` respectively; phase `type`; call-site Location; builtin-name Detail.
 
 ```ebnf
 Expression=UnaryExpr,{binary_op,UnaryExpr}; UnaryExpr=("!"|"-"),UnaryExpr|PrefixExpr;
@@ -123,7 +123,7 @@ HandoffStmt="handoff",CallExpression; ExpressionStmt=CallExpression|OiExpression
 
 `:=`/`var` locals mutable; const/parameters immutable. Assignment roots are live mutable locals; struct/slice selectors rebuild them. Local/assignable-field map/set: whole-value rebind only (`m = put(m,k,v)`); map index/set member/text index/handles cannot assign or mutate in place. Collections update only from returned `append`/`put`/`add`/`remove`. Assignment/argument types identical; literals uniquely targeted; named conversion explicit. `if` requires bool. Switch evaluates once: first equal, else final default; no fallthrough. Loop-entry snapshot: slice value or ascending index/value; map canonical key/value; set canonical value; later source rebind cannot alter it. `break` targets loop/switch/select; `continue` loop.
 
-Bad iteration-binding count: `ITERATION_BINDING_ARITY_MISMATCH`, phase `type`. Detail exactly `slice requires 1 or 2 bindings; found N`, `map requires 2 bindings; found N`, or `set requires 1 binding; found N`, canonical-decimal `N`. Too many locates first extra binding; too few `in`.
+`ITERATION_BINDING_ARITY_MISMATCH`: `type` phase; Detail exactly: `slice requires 1 or 2 bindings; found N`, `map requires 2 bindings; found N`, or `set requires 1 binding; found N`; `N` canonical decimal; Location=first extra binding if too many, `in` if too few.
 
 Function arguments evaluate left-to-right; ≤1 result; all result paths required; unit falls through. Effects: atomic, one nonempty `uses`, one semantic contract; signature+authorities+contract identify mapping. Only `capture` observes failure; no retry.
 
