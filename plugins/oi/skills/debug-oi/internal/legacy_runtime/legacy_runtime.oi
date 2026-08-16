@@ -71,7 +71,12 @@ func RunTask(program model.Program, machine legacy_model.Machine, taskIndex int,
             instruction.Kind == model.InstructionKind.Compute || instruction.Kind == model.InstructionKind.Branch ||
             instruction.Kind == model.InstructionKind.Jump {
             var transition legacy_model.Transition = legacy_action.Advance(program, function, machine, activation, instruction)
-            machine = legacy_scheduler.PutCurrent(transition.Machine, taskIndex, transition.Activation)
+            machine = transition.Machine
+            if transition.Fatal != none {
+                machine.Fatal = transition.Fatal
+                return machine
+            }
+            machine = legacy_scheduler.PutCurrent(machine, taskIndex, transition.Activation)
             if transition.Failure != none {
                 machine = FailFrame(program, machine, taskIndex, legacy_step.PresentDiagnostic(transition.Failure))
                 if machine.Tasks[taskIndex].Status == legacy_model.TaskStatus.Running {
@@ -189,7 +194,12 @@ func RunTask(program model.Program, machine legacy_model.Machine, taskIndex int,
             } else {
                 transition = legacy_channel.Advance(program, machine, activation, instruction)
             }
-            machine = legacy_scheduler.PutCurrent(transition.Machine, taskIndex, transition.Activation)
+            machine = transition.Machine
+            if transition.Fatal != none {
+                machine.Fatal = transition.Fatal
+                return machine
+            }
+            machine = legacy_scheduler.PutCurrent(machine, taskIndex, transition.Activation)
             if transition.Failure != none {
                 machine = FailFrame(program, machine, taskIndex, legacy_step.PresentDiagnostic(transition.Failure))
                 if machine.Tasks[taskIndex].Status == legacy_model.TaskStatus.Running {

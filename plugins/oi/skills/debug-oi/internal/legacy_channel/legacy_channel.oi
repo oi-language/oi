@@ -139,17 +139,26 @@ func Mismatch(location text, field text) diagnostic.Diagnostic {
 func Block(machine legacy_model.Machine, activation legacy_model.Activation, kind legacy_model.BlockKind,
     location text, channelID text?, taskID text?) legacy_model.Transition {
     return legacy_model.Transition{Machine: machine, Activation: activation, Failure: none, Blocked: true,
+        Fatal: none,
         BlockKind: kind, BlockLocation: location, BlockChannelID: channelID, BlockTaskID: taskID}
 }
 
 func Done(machine legacy_model.Machine, activation legacy_model.Activation) legacy_model.Transition {
     return legacy_model.Transition{Machine: machine, Activation: activation, Failure: none, Blocked: false,
+        Fatal: none,
         BlockKind: legacy_model.BlockKind.None, BlockLocation: "", BlockChannelID: none, BlockTaskID: none}
 }
 
 func Failed(machine legacy_model.Machine, activation legacy_model.Activation, failure diagnostic.Diagnostic) legacy_model.Transition {
     return legacy_model.Transition{Machine: machine, Activation: activation, Failure: failure, Blocked: false,
+        Fatal: none,
         BlockKind: legacy_model.BlockKind.None, BlockLocation: "", BlockChannelID: none, BlockTaskID: none}
+}
+
+func Fatal(machine legacy_model.Machine, activation legacy_model.Activation,
+    failure diagnostic.Diagnostic) legacy_model.Transition {
+    return legacy_model.Transition{Machine: machine, Activation: activation, Failure: none, Fatal: failure,
+        Blocked: false, BlockKind: legacy_model.BlockKind.None, BlockLocation: "", BlockChannelID: none, BlockTaskID: none}
 }
 
 func Advance(program model.Program, machine legacy_model.Machine, activation legacy_model.Activation,

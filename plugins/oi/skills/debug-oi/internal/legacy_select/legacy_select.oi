@@ -97,30 +97,30 @@ func Advance(machine legacy_model.Machine, activation legacy_model.Activation,
         return legacy_channel.Block(machine, activation, legacy_model.BlockKind.Select, step.Location, none, none)
     }
     if machine.JournalIndex >= len(journal) {
-        return legacy_channel.Failed(machine, activation, legacy_channel.Mismatch(step.Location, "Record"))
+        return legacy_channel.Fatal(machine, activation, legacy_channel.Mismatch(step.Location, "Record"))
     }
     var decoded legacy_model.SelectionDecode = legacy_value.DecodeSelection(journal[machine.JournalIndex])
     if !decoded.Valid {
-        return legacy_channel.Failed(machine, activation, legacy_channel.Mismatch(step.Location, "Record"))
+        return legacy_channel.Fatal(machine, activation, legacy_channel.Mismatch(step.Location, "Record"))
     }
     var selectID text = identity.SelectID(model.SelectIdentity{ActivationID: activation.ID, EncounterIndex: activation.SelectEncounter})
     if decoded.SelectID != selectID {
-        return legacy_channel.Failed(machine, activation, legacy_channel.Mismatch(step.Location, "SelectID"))
+        return legacy_channel.Fatal(machine, activation, legacy_channel.Mismatch(step.Location, "SelectID"))
     }
     var chosen int = decoded.CaseIndex
     if chosen < 0 || chosen > len(step.Cases) ||
         (decoded.CaseIndex == len(step.Cases) && step.DefaultTarget == none) {
-        return legacy_channel.Failed(machine, activation, legacy_channel.Mismatch(step.Location, "ChosenCase"))
+        return legacy_channel.Fatal(machine, activation, legacy_channel.Mismatch(step.Location, "ChosenCase"))
     }
     var chosenReady bool = CaseReady(machine, activation, step, chosen)
     if chosenReady && chosen != len(step.Cases) && ready != chosen {
-        return legacy_channel.Failed(machine, activation, legacy_channel.Mismatch(step.Location, "ChosenCase"))
+        return legacy_channel.Fatal(machine, activation, legacy_channel.Mismatch(step.Location, "ChosenCase"))
     }
     if !RelatedValid(machine, activation, step, chosen, decoded.RelatedIdentity) {
-        return legacy_channel.Failed(machine, activation, legacy_channel.Mismatch(step.Location, "RelatedIdentity"))
+        return legacy_channel.Fatal(machine, activation, legacy_channel.Mismatch(step.Location, "RelatedIdentity"))
     }
     if !chosenReady {
-        return legacy_channel.Failed(machine, activation, legacy_channel.Mismatch(step.Location, "Readiness"))
+        return legacy_channel.Fatal(machine, activation, legacy_channel.Mismatch(step.Location, "Readiness"))
     }
     machine.JournalIndex = machine.JournalIndex + 1
     machine.LastSelectLocation = step.Location

@@ -113,6 +113,7 @@ type Machine struct {
     NextBlockSequence int
     NextStateSequence int
     LastSelectLocation text
+    Fatal diagnostic.Diagnostic?
 }
 
 type RunResult struct {
@@ -126,6 +127,7 @@ type Transition struct {
     Machine Machine
     Activation Activation
     Failure diagnostic.Diagnostic?
+    Fatal diagnostic.Diagnostic?
     Blocked bool
     BlockKind BlockKind
     BlockLocation text

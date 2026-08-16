@@ -25,7 +25,7 @@ func Execute(program model.Program, initialSlots []model.InitialSlot, journal []
     var machine legacy_model.Machine = legacy_model.Machine{Events: []report.Event{}, RequiredTranscriptEntries: []text{},
         UsedTranscriptIDs: []text{}, Tasks: []legacy_model.TaskState{}, Channels: []legacy_model.ChannelState{},
         ActivationCounters: []legacy_model.Counter{}, JournalIndex: 0, NextReadySequence: 1, NextBlockSequence: 1,
-        NextStateSequence: 1, LastSelectLocation: "target:1:1"}
+        NextStateSequence: 1, LastSelectLocation: "target:1:1", Fatal: none}
     machine = legacy_scheduler.Register(program, machine, "root", "", -1, "", "target:1:1", program.EntryFunctionID, arguments)
     for {
         machine = legacy_scheduler.Wake(program, machine)
@@ -40,7 +40,14 @@ func Execute(program model.Program, initialSlots []model.InitialSlot, journal []
                 legacy_scheduler.DeadlockFailure(machine, blockedIndex))
         } else {
             machine = legacy_runtime.RunTask(program, machine, legacy_step.PresentInt(runnable), transcript, journal)
+            if machine.Fatal != none {
+                break
+            }
         }
+    }
+    if machine.Fatal != none {
+        return model.Execution{Events: machine.Events, Diagnostics: []diagnostic.Diagnostic{
+            legacy_step.PresentDiagnostic(machine.Fatal)}, RequiredTranscriptEntries: []text{}}
     }
     if len(machine.RequiredTranscriptEntries) != 0 {
         return model.Execution{Events: machine.Events, Diagnostics: []diagnostic.Diagnostic{},

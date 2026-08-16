@@ -81,7 +81,7 @@ func Advance(program model.Program, function model.Function, machine legacy_mode
             legacy_value.Operand(activation.Slots, step.Value), step.Location)
         if stored.Failure != none {
             return legacy_model.Transition{Machine: machine, Activation: activation,
-                Failure: stored.Failure, Blocked: false, BlockKind: legacy_model.BlockKind.None,
+                Failure: stored.Failure, Fatal: none, Blocked: false, BlockKind: legacy_model.BlockKind.None,
                 BlockLocation: "", BlockChannelID: none, BlockTaskID: none}
         }
         activation.Slots = legacy_value.Put(activation.Slots, step.BaseSlot, legacy_value.PresentValue(stored.Value))
@@ -91,7 +91,7 @@ func Advance(program model.Program, function model.Function, machine legacy_mode
         var value legacy_model.ValueResult = legacy_value.Compute(program, step, Values(activation.Slots, step.Inputs))
         if value.Failure != none {
             return legacy_model.Transition{Machine: machine, Activation: activation,
-                Failure: value.Failure, Blocked: false, BlockKind: legacy_model.BlockKind.None,
+                Failure: value.Failure, Fatal: none, Blocked: false, BlockKind: legacy_model.BlockKind.None,
                 BlockLocation: "", BlockChannelID: none, BlockTaskID: none}
         }
         activation.Slots = legacy_value.Put(activation.Slots, step.ResultSlot, legacy_value.PresentValue(value.Value))
@@ -109,6 +109,6 @@ func Advance(program model.Program, function model.Function, machine legacy_mode
     } else {
         activation.PC = legacy_step.PresentJump(instruction.Jump).Target
     }
-    return legacy_model.Transition{Machine: machine, Activation: activation, Failure: none, Blocked: false,
+    return legacy_model.Transition{Machine: machine, Activation: activation, Failure: none, Fatal: none, Blocked: false,
         BlockKind: legacy_model.BlockKind.None, BlockLocation: "", BlockChannelID: none, BlockTaskID: none}
 }
