@@ -4,7 +4,7 @@
   "plugins": [
     {
       "name": "oi",
-      "version": "0.0.2",
+      "version": "0.0.3",
       "description": "The Oi Agent Language",
       "homepage": "https://github.com/oi-language/oi",
       "repository": "https://github.com/oi-language/oi",

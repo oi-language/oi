@@ -31,11 +31,12 @@ Oi 借鉴了 Go 的一些结构性经验：显式语言版本、module/package/i
 
 ## 一眼看懂
 
-一个可执行 Oi 模块在 `oi.mod` 中选择一个精确语言快照：
+一个可执行 Oi 模块通过最近的 `oi.mod` 选择一个精确语言快照；Oi 不会使用默认版本、组合版本，也不会以 plugin packaging version 代替语言版本。Oi 0.0.2 还会显式列出每个项目 source：
 
 ```text
 module hello
-oi 0.0.1
+oi 0.0.2
+source main.oi
 ```
 
 行为位于 `main.oi`：
@@ -57,18 +58,20 @@ func main(name Name) {
 }
 ```
 
-名称小写且没有结果的 `main` 由宿主使用有类型 caller 输入调用。声明的 `Reply` effect 明确外部边界，方括号表达式只执行一次有边界的语义判断。完整模块位于 [`examples/hello-world`](plugins/oi/skills/using-oi/versions/0.0.1/examples/hello-world/)。
+名称小写且没有结果的 `main` 由宿主使用有类型 caller 输入调用。声明的 `Reply` effect 明确外部边界，方括号表达式只执行一次有边界的语义判断。当前完整模块位于 [`examples/hello-world`](plugins/oi/skills/using-oi/versions/0.0.2/examples/hello-world/)。
 
 ## 项目状态
 
-- ✅ Oi 0.0.1 定义了一个精确语言快照、由 manifest 加载的 runtime shard、版本化 standard library、示例和 conformance corpus。
-- ✅ 随附的 compiler、formatter、debugger、benchmark、converter 和 upgrader 均以 Oi 实现；它们的 `SKILL.md` adapter 只负责加载、映射和路由。
-- ✅ 公开 specification、execution-spec manifest、adapter、corpus 预期和跨工具 contract 共同描述并验证同一个 0.0.1 语言快照。
+- ✅ Oi 0.0.2 是当前语言快照。它使用严格的 source manifest、带固定预算的 logical read、确定性的 map/set 值与迭代、有边界的普通语义判断和有类型的确定性 `derive`，并使用 sealed execution、受保护 receipt 与 replay。
+- ✅ Oi 0.0.1 仍随包安装并保持不可变，继续使用其已发布的加载与 runtime 行为。Plugin package 0.0.3 同时交付这两个精确快照；package version 与语言版本彼此独立。
+- ✅ 随附的 compiler、formatter、debugger、benchmark、converter 和只读 upgrader 均以 Oi 实现；它们的 `SKILL.md` adapter 只负责加载、映射和路由。从 0.0.1 到 0.0.2 的 upgrade analysis 必须显式请求，且不会改写或执行目标。
+- ✅ 三个提炼后的有类型案例分别覆盖 import alias 分析、多根 bootstrap 决策和真实 sealed invocation 证明。Receipt 只能证明结果与可信 sealed host 的完成记录一致；它既不能让恶意 host 变得可信，也不是编译产物。
 
 ## 文档
 
-- [语言设计](docs/language/design.md)：Oi 0.0.1 背后的稳定设计选择与边界模型。
-- [版本化执行规范](plugins/oi/skills/using-oi/versions/0.0.1/execution.md)：规范性的 grammar、静态语义、加载规则和浅层执行语义。
+- [语言设计](docs/language/design.md)：已发布快照共享的稳定设计选择与边界模型。
+- [Oi 0.0.2 执行规范](plugins/oi/skills/using-oi/versions/0.0.2/execution.md)：当前规范性的 grammar、静态语义、加载规则和浅层执行语义。
+- [Oi 0.0.1 执行规范](plugins/oi/skills/using-oi/versions/0.0.1/execution.md)：不可变的早期快照。
 - [核心语言语料库](docs/language/corpus.md)：正例、无效输入、runtime 和 durable 行为案例。
 - [工具链 contract](docs/language/toolchain.md)：有类型入口、effect、变更边界和跨工具场景。
 - [品牌指南](docs/brand.md)：logo、定稿吉祥物、配色、尺寸和原创性规则。
@@ -77,13 +80,13 @@ func main(name Name) {
 
 1. 用真实 Skill 模块和带出处的 Agent 案例扩充语料。
 2. 围绕反复出现的模块模式改进示例和公开文档。
-3. 通过显式兼容性检查准备后续精确快照，同时保持 0.0.1 不可变。
+3. 通过显式兼容性检查准备未来精确快照，同时保持已发布快照不可变。
 
-路线图坚持证据优先：Oi 0.0.1 行为保持不可变，后续变化必须显式且可测试。
+路线图坚持证据优先：Oi 0.0.2 是当前快照，Oi 0.0.1 保持不可变，后续变化必须显式且可测试。
 
 ## 参与贡献
 
-请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。文档、语料案例、source/spec 评审，以及聚焦的语言或工具改进，都是对已实现 0.0.1 基线有价值的贡献。
+请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。文档、语料案例、source/spec 评审，以及聚焦的语言或工具改进，都是对已发布 0.0.2 基线有价值的贡献。
 
 提交变更时，请说明它解决的问题、保留的约束，以及一个能让行为易于评审的最小示例。请在独立的开发 worktree 中完成实现，并让仓库门面始终聚焦准确的公开沟通。
 

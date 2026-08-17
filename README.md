@@ -31,11 +31,12 @@ Oi borrows several structural ideas from Go: explicit language versions, module/
 
 ## At a glance
 
-An executable Oi module selects one exact language snapshot in `oi.mod`:
+An executable Oi module selects one exact language snapshot in its nearest `oi.mod`; Oi never defaults, combines, or substitutes a plugin packaging version. Oi 0.0.2 also lists every project source explicitly:
 
 ```text
 module hello
-oi 0.0.1
+oi 0.0.2
+source main.oi
 ```
 
 Its behavior lives in `main.oi`:
@@ -57,18 +58,20 @@ func main(name Name) {
 }
 ```
 
-The lowercase, resultless `main` is invoked by the host with typed caller input. The declared `Reply` effect makes the external boundary explicit, while the bracketed expression performs one bounded semantic judgment. The complete module is available under [`examples/hello-world`](plugins/oi/skills/using-oi/versions/0.0.1/examples/hello-world/).
+The lowercase, resultless `main` is invoked by the host with typed caller input. The declared `Reply` effect makes the external boundary explicit, while the bracketed expression performs one bounded semantic judgment. The complete current module is available under [`examples/hello-world`](plugins/oi/skills/using-oi/versions/0.0.2/examples/hello-world/).
 
 ## Project status
 
-- ✅ Oi 0.0.1 defines one exact language snapshot, manifest-loaded runtime shards, a versioned standard library, examples, and a conformance corpus.
-- ✅ The bundled compiler, formatter, debugger, benchmark, converter, and upgrader are implemented in Oi; their `SKILL.md` adapters only load, map, and route.
-- ✅ Public specifications, execution-spec manifests, adapters, corpus expectations, and cross-tool contracts describe and validate the same 0.0.1 language snapshot.
+- ✅ Oi 0.0.2 is the current language snapshot. It uses strict source manifests and logical reads with fixed budgets; deterministic map/set values and iteration; bounded ordinary judgments and typed deterministic `derive`; and sealed execution with protected receipts and replay.
+- ✅ Oi 0.0.1 remains installed and immutable with its released loading and runtime behavior. Plugin package 0.0.3 delivers both exact snapshots; package and language versions are independent.
+- ✅ The bundled compiler, formatter, debugger, benchmark, converter, and read-only upgrader are implemented in Oi; their `SKILL.md` adapters only load, map, and route. Upgrade analysis from 0.0.1 to 0.0.2 is explicit and never rewrites or executes the target.
+- ✅ Three distilled typed cases cover import-alias analysis, multi-root bootstrap decisions, and proof of actual sealed invocation. A receipt proves consistency with a trusted sealed host completion; it neither makes a malicious host trustworthy nor serves as a compiled artifact.
 
 ## Documentation
 
-- [Language design](docs/language/design.md) — the stable design choices and boundary model behind Oi 0.0.1.
-- [Versioned execution specification](plugins/oi/skills/using-oi/versions/0.0.1/execution.md) — the normative grammar, static semantics, loading rules, and shallow execution semantics.
+- [Language design](docs/language/design.md) — the stable design choices and boundary model shared by the released snapshots.
+- [Oi 0.0.2 execution specification](plugins/oi/skills/using-oi/versions/0.0.2/execution.md) — the current normative grammar, static semantics, loading rules, and shallow execution semantics.
+- [Oi 0.0.1 execution specification](plugins/oi/skills/using-oi/versions/0.0.1/execution.md) — the immutable earlier snapshot.
 - [Core language corpus](docs/language/corpus.md) — positive, invalid, runtime, and durable behavior cases.
 - [Toolchain contracts](docs/language/toolchain.md) — typed entry points, effects, mutation boundaries, and the cross-tool scenario.
 - [Brand guide](docs/brand.md) — logo assets, palette, sizing, and originality rules.
@@ -77,13 +80,13 @@ The lowercase, resultless `main` is invoked by the host with typed caller input.
 
 1. Grow the corpus with real Skill modules and attributed Agent cases.
 2. Improve examples and public documentation around recurring module patterns.
-3. Prepare later exact snapshots through explicit compatibility checks while keeping 0.0.1 immutable.
+3. Prepare future exact snapshots through explicit compatibility checks while keeping released snapshots immutable.
 
-The roadmap stays evidence-first: Oi 0.0.1 behavior remains immutable, and later changes must be explicit and testable.
+The roadmap stays evidence-first: Oi 0.0.2 is current, Oi 0.0.1 remains immutable, and later changes must be explicit and testable.
 
 ## Contributing
 
-Start with [CONTRIBUTING.md](CONTRIBUTING.md). Documentation, corpus cases, source/spec review, and focused language or tool improvements are valuable contributions to the implemented 0.0.1 baseline.
+Start with [CONTRIBUTING.md](CONTRIBUTING.md). Documentation, corpus cases, source/spec review, and focused language or tool improvements are valuable contributions to the released 0.0.2 baseline.
 
 When proposing a change, include the problem it solves, the constraint it preserves, and the smallest example that makes the behavior reviewable. Keep implementation work in its own development worktree and keep the repository facade focused on accurate public communication.
 

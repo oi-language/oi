@@ -1,6 +1,22 @@
-# Oi 0.0.1 Core Language Corpus
+# Oi language corpus
 
-The versioned corpus is rooted at `plugins/oi/skills/using-oi/versions/0.0.1/corpus`. `suite/main.oi` exposes the case list and `suite/runtime.oi` carries typed runtime assertions. Each case is evaluated by `compile-oi` and, once available, `bench-oi`.
+Oi 0.0.2 is the current language snapshot. Its versioned corpus is rooted at [`plugins/oi/skills/using-oi/versions/0.0.2/corpus`](../../plugins/oi/skills/using-oi/versions/0.0.2/corpus/); the manifested suite sources own the exact case list and typed expectations. The explanatory inventory below cannot override those `.oi` sources or the normative [0.0.2 execution specification](../../plugins/oi/skills/using-oi/versions/0.0.2/execution.md).
+
+The current catalog has exactly 60 unique cases: 28 Compile and 32 Runtime. Direct compilation matches all 60 targets (41 Pass and 19 Fail), suite compilation adds one Pass, and runtime matches all 32 cases (21 Pass and 11 RuntimeFail) plus two durable resume observations. The 32 runtime receipts contain 607 expected operation records and validate against the sealed source, inputs, mappings, authorities, policy, Reply, and terminal state.
+
+Coverage includes exact nearest-`oi.mod` resolution, strict source-manifest ordering and closure, logical-read drift and budget failures, deterministic map/set construction and iteration, bounded ordinary judgments, typed deterministic `derive`, sealed input/effect admission, tasks/channels/lifecycle behavior, and protected receipt/replay limits. A receipt is evidence that an observation is consistent with a trusted sealed host completion; it is not a compiled artifact and cannot make a malicious host trustworthy.
+
+Three repository-level cases distill the release boundaries:
+
+- [`registry-analysis`](cases/0.0.2/registry-analysis/) applies one bounded typed alias judgment per caller-supplied import and one deterministic typed derivation for ordering;
+- [`multi-root-bootstrap`](cases/0.0.2/multi-root-bootstrap/) derives deterministic membership and missing sets from explicit roots and registry state, without repository discovery;
+- [`actual-invocation-proof`](cases/0.0.2/actual-invocation-proof/) demonstrates that a matching answer without sealed admission, an actual Reply, and a completed receipt is insufficient.
+
+Oi 0.0.1 remains installed and byte-immutable with its released loading/runtime behavior. Its corpus is rooted at [`plugins/oi/skills/using-oi/versions/0.0.1/corpus`](../../plugins/oi/skills/using-oi/versions/0.0.1/corpus/): compilation remains 47/47 (30 Pass and 17 StaticFail), typed runtime remains 21/21 (16 Pass and 5 RuntimeFail), and three durable cases remain genuine STOP boundaries because the released concrete harness values do not exist. Plugin package 0.0.3 delivers both exact language snapshots without changing either corpus.
+
+## Released 0.0.1 ordinary suite
+
+The table preserves the original 42-case ordinary-suite index for the immutable earlier snapshot.
 
 | Case ID | Target | Expected phase | Expected category | Exact location when fixed |
 | --- | --- | --- | --- | --- |

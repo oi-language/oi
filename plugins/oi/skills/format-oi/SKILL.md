@@ -9,4 +9,4 @@ Use the formatter's colocated `oi.mod` and `main.oi` through local `using-oi`. T
 
 Bind typed caller inputs to the host-only lowercase resultless entry exactly as `func main(target fs.Path, available []text)`. Map reachable `fs.Scan` and `fs.Read` to `workspace.read`, `fs.Write` to `workspace.write`, and `effect Reply(value report.FormatReport) unit` to `caller.reply`.
 
-Host-invoke `main` exactly once. Capture exactly one typed `report.FormatReport` payload from `Reply` and expose it unchanged. Format only the explicit target; an `oi.mod` is special only when it is that target. Do not Oi-call `main`, infer an entry return, execute the target, rewrite siblings, encode a report as text, or copy grammar or formatting algorithms into this adapter.
+Host-invoke `main` exactly once. Capture exactly one typed `report.FormatReport` payload from `Reply` and expose it unchanged. Format only the explicit target; an `oi.mod` is special only when it is that target. Do not Oi-call `main`, infer an entry return, execute the target, rewrite siblings, encode a report as text, or copy grammar or formatting algorithms into this adapter. Supports 0.0.1/0.0.2.

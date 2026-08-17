@@ -14,4 +14,4 @@ No grammar, receipt construction, or dependency lives here.
 5. If isolation is unavailable, stop before entry with `CONTEXT_ISOLATION_UNAVAILABLE` and a failed receipt with Policy none and zero operations. Otherwise a fresh Agent host-invokes `main`; runtime starts only now.
 6. Deliver mapped typed Reply unchanged and its receipt separately. Canonical values remain only in the protected journal; the target cannot read its current receipt.
 
-Unsupported bootstrap reports no receipt. Never Oi-call `main`, invent Reply/receipt fields, infer expected payloads, or expose ambient context.
+Unsupported bootstrap reports no receipt. Never Oi-call `main`, invent Reply/receipt fields, infer expected payloads, or expose ambient context. Supports 0.0.1/0.0.2.
