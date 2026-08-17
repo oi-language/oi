@@ -1,0 +1,32 @@
+package main
+
+type Entry struct {
+    Key text
+    Value text
+}
+
+type Registry []Entry
+
+type MigrationPolicy struct {
+    DuplicateKeyRule text
+    PublishAuthority text
+}
+
+effect Publish(value Registry) unit {
+    uses domain.publish
+    contract [publish {value} exactly once]
+}
+
+func Normalize(entries Registry) Registry {
+    return [preserve one Entry for each {entries} item in canonical key order]
+}
+
+func Select(entries Registry, policy MigrationPolicy) Registry {
+    return [choose preferred Entries from {entries} using {policy.DuplicateKeyRule}]
+}
+
+func main(entries Registry, policy MigrationPolicy) {
+    var normalized Registry = Normalize(entries)
+    var selected Registry = Select(normalized, policy)
+    Publish(selected)
+}

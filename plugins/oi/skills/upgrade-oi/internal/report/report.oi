@@ -11,6 +11,7 @@ type Compatibility enum {
 type Change struct {
     Category text
     Location text
+    Reason text
     Before text
     After text
     Automatic bool
@@ -24,22 +25,27 @@ type UpgradeReport struct {
     Diagnostics []diagnostic.Diagnostic
 }
 
-func Compatible(sourceVersion text?, targetVersion text) UpgradeReport {
+func Compatible(sourceVersion text?, targetVersion text, changes []Change) UpgradeReport {
     return UpgradeReport{
         SourceVersion: sourceVersion,
         TargetVersion: targetVersion,
         Compatibility: Compatibility.Compatible,
-        Changes: []Change{},
+        Changes: changes,
         Diagnostics: []diagnostic.Diagnostic{},
     }
 }
 
-func Incompatible(sourceVersion text?, targetVersion text, diagnostics []diagnostic.Diagnostic) UpgradeReport {
+func Incompatible(
+    sourceVersion text?,
+    targetVersion text,
+    changes []Change,
+    diagnostics []diagnostic.Diagnostic,
+) UpgradeReport {
     return UpgradeReport{
         SourceVersion: sourceVersion,
         TargetVersion: targetVersion,
         Compatibility: Compatibility.Incompatible,
-        Changes: []Change{},
+        Changes: changes,
         Diagnostics: diagnostics,
     }
 }
@@ -52,4 +58,22 @@ func Unavailable(sourceVersion text?, targetVersion text, diagnostics []diagnost
         Changes: []Change{},
         Diagnostics: diagnostics,
     }
+}
+
+func FromFailure(value failure) diagnostic.Diagnostic {
+    return diagnostic.Diagnostic{
+        Category: value.Category, Phase: value.Phase, Location: value.Location,
+        Detail: value.Detail, Trace: value.Trace,
+    }
+}
+
+func UpgradeDiagnostics(category text, location text, detail text) []diagnostic.Diagnostic {
+    return []diagnostic.Diagnostic{diagnostic.New(category, "upgrade", location, detail)}
+}
+
+func HasManual(changes []Change) bool {
+    for change in changes {
+        if !change.Automatic { return true; }
+    }
+    return false
 }

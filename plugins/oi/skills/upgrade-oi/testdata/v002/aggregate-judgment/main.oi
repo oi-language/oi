@@ -1,0 +1,15 @@
+package main
+
+type Decision struct {
+    Score int
+    Accept bool
+}
+
+func Choose(scores []int) []Decision {
+    var decisions []Decision = [choose the preferred Decisions for {scores}]
+    return decisions
+}
+
+func main(scores []int) {
+    var decisions []Decision = Choose(scores)
+}

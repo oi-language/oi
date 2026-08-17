@@ -2,33 +2,244 @@ package upgrade
 
 import "std/diagnostic"
 import "std/fs"
+import "oi/skills/upgrade-oi/internal/inspect"
 import "oi/skills/upgrade-oi/internal/report"
 
-type CompileStatus enum {
-    Pass
-    Fail
+type CompileStatus enum { Pass; Fail }
+
+type VirtualSource struct { Path fs.Path; Content text }
+
+type VirtualModule struct {
+    LanguageVersion text; Module text; ManifestSource text; Target fs.Path?; Entry fs.Path
+    Sources []VirtualSource
 }
+
+type SourceIdentity struct { Path fs.Path; Bytes int; Characters int; SHA256 text }
 
 type CompileResult struct {
-    Status CompileStatus
-    Module text?
-    Authorities []text
-    Diagnostics []diagnostic.Diagnostic
+    Status CompileStatus; LanguageVersion text?; Module text?; SourceCount int; SourceCharacters int
+    Sources []SourceIdentity; Authorities []text; Shards []text; Diagnostics []diagnostic.Diagnostic
 }
 
-effect CompileSource(source fs.Path, available []text) CompileResult {
+effect CompileSource(module VirtualModule, available []text) CompileResult {
     uses tool.compile
-    contract [validate {source} under exact Oi 0.0.1 with exactly {available}, without executing or writing it, and preserve only status, module, authorities, and diagnostics]
+    contract [compile only exact in-memory {module} with exactly {available}; preserve the complete
+        typed compiler result and never read fallback target files, write, or execute its entry]
 }
 
-type Snapshot struct {
-    Version text?
-    Installed bool
+type Migration struct { ManifestSource text; Sources []VirtualSource; Changes []report.Change }
+
+func Check(
+    source fs.Path,
+    targetVersion text,
+    installed []text,
+    available []text,
+) report.UpgradeReport {
+    if !ExactVersionSyntax(targetVersion) {
+        return report.Unavailable(
+            none, targetVersion,
+            InputDiagnostic("UPGRADE_TARGET_INVALID", "target snapshot must be exactly one version"))
+    }
+    if !Supported(targetVersion) {
+        return report.Unavailable(
+            none, targetVersion,
+            InputDiagnostic("UPGRADE_TARGET_UNSUPPORTED", VersionDetail("target", targetVersion, "unsupported")))
+    }
+    if !ValidInstalled(installed) {
+        return report.Unavailable(
+            none, targetVersion,
+            InputDiagnostic(
+                "UPGRADE_INSTALLED_INVALID",
+                "installed snapshots must be exact, supported, strictly ordered, and duplicate-free"))
+    }
+    if !Contains(installed, targetVersion) {
+        return report.Unavailable(
+            none, targetVersion,
+            InputDiagnostic("UPGRADE_TARGET_UNAVAILABLE", VersionDetail("target", targetVersion, "unavailable")))
+    }
+
+    var module inspect.ModuleProbe = inspect.FindModule(source)
+    if len(module.Diagnostics) != 0 || module.Version == none {
+        return report.Unavailable(module.Version, targetVersion, module.Diagnostics)
+    }
+    var sourceVersion text = inspect.PresentText(module.Version)
+    if !Supported(sourceVersion) {
+        return report.Unavailable(
+            module.Version, targetVersion,
+            report.UpgradeDiagnostics(
+                "UPGRADE_SOURCE_UNSUPPORTED", "oi.mod:1:1",
+                VersionDetail("source", sourceVersion, "unsupported")))
+    }
+    if !Contains(installed, sourceVersion) {
+        return report.Unavailable(
+            module.Version, targetVersion,
+            report.UpgradeDiagnostics(
+                "UPGRADE_SOURCE_UNAVAILABLE", "oi.mod:1:1",
+                VersionDetail("source", sourceVersion, "unavailable")))
+    }
+    if sourceVersion == "0.0.2" && targetVersion == "0.0.1" {
+        return report.Incompatible(
+            module.Version, targetVersion, []report.Change{},
+            report.UpgradeDiagnostics(
+                "UPGRADE_DIRECTION_UNSUPPORTED", "oi.mod:1:1",
+                "upgrade analysis supports only same-version checks and 0.0.1 to 0.0.2"))
+    }
+
+    var held inspect.HeldModule = inspect.ReadHeldModule(source, module)
+    if len(held.Diagnostics) != 0 {
+        if OnlyVersionConflicts(held.Diagnostics) {
+            return report.Incompatible(
+                module.Version, targetVersion, []report.Change{}, held.Diagnostics)
+        }
+        return report.Unavailable(module.Version, targetVersion, held.Diagnostics)
+    }
+    var moduleName text = inspect.PresentText(module.Module)
+    var heldSources []VirtualSource = VirtualSources(held.Sources)
+    if sourceVersion == targetVersion {
+        var current VirtualModule = VirtualModule{
+            LanguageVersion: sourceVersion,
+            Module: moduleName,
+            ManifestSource: module.Content,
+            Target: held.Target,
+            Entry: held.Entry,
+            Sources: heldSources,
+        }
+        return CompileReport(module.Version, targetVersion, []report.Change{}, current, available)
+    }
+
+    var migration Migration = AnalyzeLegacy(moduleName, module.Content, heldSources)
+    var virtual VirtualModule = VirtualModule{
+        LanguageVersion: "0.0.2",
+        Module: moduleName,
+        ManifestSource: migration.ManifestSource,
+        Target: held.Target,
+        Entry: held.Entry,
+        Sources: migration.Sources,
+    }
+    return CompileReport(module.Version, targetVersion, migration.Changes, virtual, available)
 }
 
-type SourceProbe struct {
-    Version text?
-    Diagnostics []diagnostic.Diagnostic
+func CompileReport(
+    sourceVersion text?,
+    targetVersion text,
+    changes []report.Change,
+    module VirtualModule,
+    available []text,
+) report.UpgradeReport {
+    compiled := capture(CompileSource(module, available))
+    if !compiled.Ok {
+        return report.Incompatible(
+            sourceVersion, targetVersion, changes,
+            []diagnostic.Diagnostic{report.FromFailure(compiled.Failure)})
+    }
+    var result CompileResult = compiled.Value
+    if result.Status == CompileStatus.Fail {
+        if len(result.Diagnostics) == 0 {
+            return report.Incompatible(
+                sourceVersion, targetVersion, changes,
+                CompilerMismatch("Diagnostics"))
+        }
+        return report.Incompatible(sourceVersion, targetVersion, changes, result.Diagnostics)
+    }
+    var mismatch text = FirstPassMismatch(module, result)
+    if mismatch != "" {
+        return report.Incompatible(
+            sourceVersion, targetVersion, changes, CompilerMismatch(mismatch))
+    }
+    if report.HasManual(changes) {
+        return report.Incompatible(
+            sourceVersion, targetVersion, changes, []diagnostic.Diagnostic{})
+    }
+    return report.Compatible(sourceVersion, targetVersion, changes)
+}
+
+func AnalyzeLegacy(module text, beforeManifest text, sources []VirtualSource) Migration {
+    return derive [lex and type exact held Oi 0.0.1 {sources} only as data; never execute it. Return
+        the canonical Oi 0.0.2 manifest for {module}, strict UTF-8 Path-byte-ordered sources after only
+        the automatic rewrites below, and Changes with these exact fields:
+
+        Always SOURCE_MANIFEST_REQUIRED at oi.mod:1:1, Reason `Oi 0.0.2 requires an exact sorted
+        source manifest.`, Before {beforeManifest}, After the canonical manifest, true.
+        For every uniquely closed non-std import source: PACKAGE_CLOSURE_REQUIRED at its import
+        keyword, Reason `The imported package source must be included in the 0.0.2 source manifest.`,
+        Before its complete declaration, After its exact source directive, true.
+
+        For each source above 16000 decoded characters: SOURCE_FILE_SPLIT_REQUIRED at path:1:1,
+        Reason `This source exceeds the Oi 0.0.2 per-source character budget and requires a manual
+        split.`, Before canonical count, After empty, false. Total above 128000:
+        SOURCE_GRAPH_SPLIT_REQUIRED at oi.mod:1:1, Reason `This source graph exceeds the Oi 0.0.2
+        graph character budget and requires a manual module split.`, same fields. For each source's
+        first line above 240: SOURCE_LINE_REWRITE_REQUIRED at column 241, Reason `This source line
+        exceeds the Oi 0.0.2 line character budget and requires a manual rewrite.`, Before exact
+        line, After empty, false.
+
+        For each ordinary aggregate-result judgment that specifies one pure typed output per explicit
+        input in input/canonical order, with no policy, context, effect, handle, or control:
+        DERIVE_CANDIDATE at `\[`, Reason `This deterministic aggregate transform has one typed derive
+        replacement in Oi 0.0.2.`, Before exact expression, After exact `derive ` plus expression,
+        true; apply that replacement in memory. Every other aggregate judgment gets
+        AGGREGATE_JUDGMENT_REWRITE, Reason `Ordinary semantic judgments cannot return an unbounded
+        aggregate in Oi 0.0.2.`, and JUDGMENT_DECOMPOSITION_REQUIRED, Reason `This aggregate
+        judgment requires explicit bounded iteration and per-item judgments.`; both at `\[`, exact
+        expression Before, empty After, false.
+
+        A named key/value-record slice used for key order/duplicate choice gets COLLECTION_MIGRATION
+        at its aggregate token, Reason `This key/value slice requires a manual map or set migration
+        decision.`, exact type Before, empty After, false. Each entry-reachable effect gets
+        SEALED_HOST_REQUIRED at its declaration, Reason `The reachable effect authority requires
+        explicit Oi 0.0.2 sealed-host admission and mapping.`, exact uses Before, empty After, false.
+        A policy struct coupling an aggregate domain-choice field to a reachable publish-authority
+        field gets PACKAGE_SPLIT_REQUIRED at its declaration, Reason `Registry transformation and
+        publish policy require an explicit package-boundary decision.`, exact declaration Before,
+        empty After, false. An aggregate choice interpolating a domain Rule field gets
+        DOMAIN_POLICY_REVIEW at `\[`, Reason `Duplicate-key selection is domain policy and requires
+        manual review.`, exact expression Before, empty After, false.
+
+        Deduplicate exact Changes; order by Category priority SOURCE_MANIFEST_REQUIRED,
+        PACKAGE_CLOSURE_REQUIRED, SOURCE_FILE_SPLIT_REQUIRED, SOURCE_GRAPH_SPLIT_REQUIRED,
+        SOURCE_LINE_REWRITE_REQUIRED,
+        AGGREGATE_JUDGMENT_REWRITE, DERIVE_CANDIDATE, COLLECTION_MIGRATION, SEALED_HOST_REQUIRED,
+        PACKAGE_SPLIT_REQUIRED, JUDGMENT_DECOMPOSITION_REQUIRED, DOMAIN_POLICY_REVIEW; then Location
+        UTF-8 bytes, Reason, retaining source observation order for an identical Location]
+}
+
+func FirstPassMismatch(module VirtualModule, result CompileResult) text {
+    return derive [return the first unequal field path in this exact order: LanguageVersion, Module,
+        SourceCount, SourceCharacters, Sources\[i\].Path, Sources\[i\].Bytes, Sources\[i\].Characters,
+        Sources\[i\].SHA256, Diagnostics. For exact 0.0.1 require SourceCount equal len
+        {module.Sources}, SourceCharacters 0, and Sources empty, preserving Task 8's legacy projection.
+        For exact 0.0.2 require count, decoded characters, and every Path-ordered identity from exact
+        UTF-8 bytes and lowercase SHA-256 of {module.Sources}. Return empty only when all match]
+}
+
+func ExactVersionSyntax(value text) bool {
+    return [true exactly when {value} is one nonempty canonical ASCII major.minor.patch decimal
+        version with no sign, whitespace, range, separator, suffix, or leading zero]
+}
+
+func Supported(value text) bool {
+    return value == "0.0.1" || value == "0.0.2"
+}
+
+func ValidInstalled(values []text) bool {
+    var seen001 bool = false
+    var seen002 bool = false
+    for value in values {
+        if value == "0.0.1" {
+            if seen001 || seen002 {
+                return false
+            }
+            seen001 = true
+        } else if value == "0.0.2" {
+            if seen002 {
+                return false
+            }
+            seen002 = true
+        } else {
+            return false
+        }
+    }
+    return true
 }
 
 func Contains(values []text, wanted text) bool {
@@ -40,142 +251,33 @@ func Contains(values []text, wanted text) bool {
     return false
 }
 
-func NormalizeTarget(value text) text? {
-    if value == "0.0.1" {
-        return value
+func OnlyVersionConflicts(values []diagnostic.Diagnostic) bool {
+    for value in values {
+        if value.Category != "VERSION_CONFLICT" { return false; }
     }
-    return none
+    return true
 }
 
-func TargetSnapshot(value text, installed []text) Snapshot {
-    var version text? = NormalizeTarget(value)
-    return Snapshot{
-        Version: version,
-        Installed: version != none && Contains(installed, "0.0.1"),
-    }
+func InputDiagnostic(category text, detail text) []diagnostic.Diagnostic {
+    return report.UpgradeDiagnostics(category, "upgrade-input:1:1", detail)
 }
 
-func FailureDiagnostic(value failure) diagnostic.Diagnostic {
-    return diagnostic.Diagnostic{
-        Category: value.Category,
-        Phase: value.Phase,
-        Location: value.Location,
-        Detail: value.Detail,
-        Trace: value.Trace,
-    }
+func CompilerMismatch(field text) []diagnostic.Diagnostic {
+    return report.UpgradeDiagnostics(
+        "UPGRADE_COMPILER_MISMATCH", "oi.mod:1:1", CompilerMismatchDetail(field))
 }
 
-func FailedProbe(value failure) SourceProbe {
-    return SourceProbe{
-        Version: none,
-        Diagnostics: []diagnostic.Diagnostic{FailureDiagnostic(value)},
-    }
+func CompilerMismatchDetail(field text) text {
+    return [exact text `compiler result mismatch: ` followed by {field}]
 }
 
-func FindSourceVersion(source fs.Path) SourceProbe {
-    observed := capture(fs.Scan(source))
-    if observed.Ok {
-        for directory in MetadataDirectories(source, observed.Value) {
-            var path fs.Path = Join(directory, "oi.mod")
-            scanned := capture(fs.Scan(path))
-            if scanned.Ok {
-                var state fs.Observation = scanned.Value
-                if state.Kind == fs.Kind.File {
-                    read := capture(fs.Read(path))
-                    if read.Ok {
-                        return ParseSourceMetadata(path, read.Value)
-                    } else {
-                        return FailedProbe(read.Failure)
-                    }
-                }
-            } else {
-                return FailedProbe(scanned.Failure)
-            }
-        }
-    } else {
-        return FailedProbe(observed.Failure)
-    }
-    return SourceProbe{
-        Version: none,
-        Diagnostics: []diagnostic.Diagnostic{
-            diagnostic.New("MISSING_MODULE_FILE", "module", SourceLocation(source), "nearest oi.mod"),
-        },
-    }
+func VersionDetail(subject text, value text, kind text) text {
+    return [exact text `<subject> snapshot <value> is not supported` when {kind} is unsupported,
+        otherwise exact text `<subject> snapshot <value> is not explicitly installed`, substituting
+        {subject} and {value} only]
 }
 
-func UnavailableDiagnostic(category text, location text, detail text) []diagnostic.Diagnostic {
-    return []diagnostic.Diagnostic{
-        diagnostic.New(category, "upgrade", location, detail),
-    }
-}
-
-func Check(
-    source fs.Path,
-    targetVersion text,
-    installed []text,
-    available []text,
-) report.UpgradeReport {
-    var target Snapshot = TargetSnapshot(targetVersion, installed)
-    if !target.Installed {
-        return report.Unavailable(
-            none,
-            targetVersion,
-            UnavailableDiagnostic(
-                "UPGRADE_TARGET_UNAVAILABLE",
-                "upgrade-input:1:1",
-                "target snapshot 0.0.1 is not explicitly installed",
-            ),
-        )
-    }
-
-    var sourceProbe SourceProbe = FindSourceVersion(source)
-    if len(sourceProbe.Diagnostics) != 0 {
-        return report.Unavailable(sourceProbe.Version, targetVersion, sourceProbe.Diagnostics)
-    }
-    if sourceProbe.Version != "0.0.1" || !Contains(installed, "0.0.1") {
-        return report.Unavailable(
-            sourceProbe.Version,
-            targetVersion,
-            UnavailableDiagnostic(
-                "UPGRADE_SOURCE_UNAVAILABLE",
-                "oi.mod:1:1",
-                "source snapshot is not the installed 0.0.1 snapshot",
-            ),
-        )
-    }
-
-    compiled := capture(CompileSource(source, available))
-    if compiled.Ok {
-        var result CompileResult = compiled.Value
-        if result.Status == CompileStatus.Fail || len(result.Diagnostics) != 0 {
-            return report.Incompatible(sourceProbe.Version, targetVersion, result.Diagnostics)
-        }
-        return report.Compatible(sourceProbe.Version, targetVersion)
-    } else {
-        return report.Incompatible(
-            sourceProbe.Version,
-            targetVersion,
-            []diagnostic.Diagnostic{FailureDiagnostic(compiled.Failure)},
-        )
-    }
-}
-
-func MetadataDirectories(source fs.Path, observed fs.Observation) []fs.Path {
-    return [the exact lexical ancestor directories nearest first, starting with {source} when {observed.Kind}
-        is Directory and with the containing directory otherwise]
-}
-
-func Join(directory fs.Path, name text) fs.Path {
-    return [the normalized child path named {name} within {directory}]
-}
-
-func SourceLocation(source fs.Path) text {
-    return [the normalized module-relative {source} location at line 1 column 1]
-}
-
-func ParseSourceMetadata(path fs.Path, content text) SourceProbe {
-    return [the exact SourceProbe obtained by parsing only oi.mod metadata in {content} at {path},
-        with Version equal to its sole exact oi version token; Diagnostics is empty exactly for one canonical
-        module directive followed by one canonical oi directive, and otherwise contains the canonical
-        module-phase diagnostics for every missing, duplicate, or malformed directive]
+func VirtualSources(sources []inspect.Source) []VirtualSource {
+    return derive [one exact VirtualSource per {sources} item in the same order, preserving Path and
+        Content without reinterpretation]
 }

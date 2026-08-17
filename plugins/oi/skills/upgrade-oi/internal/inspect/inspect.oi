@@ -1,0 +1,237 @@
+package inspect
+
+import "std/diagnostic"
+import "std/fs"
+import "oi/skills/upgrade-oi/internal/report"
+
+type Source struct { Path fs.Path; Content text }
+
+type ModuleProbe struct {
+    Root fs.Path?; Target fs.Path?; Content text; Module text?; Version text?; ManifestPaths []fs.Path
+    Diagnostics []diagnostic.Diagnostic
+}
+
+type HeldModule struct {
+    Target fs.Path?; Sources []Source; Entry fs.Path; Diagnostics []diagnostic.Diagnostic
+}
+
+type ImportProbe struct { Path text; Standard bool }
+
+type ImportTarget struct { Found bool; Directory fs.Path }
+
+func FindModule(source fs.Path) ModuleProbe {
+    observed := capture(fs.Scan(source))
+    if !observed.Ok { return FailedModule(observed.Failure); }
+    for directory in MetadataDirectories(source, observed.Value) {
+        var path fs.Path = Join(directory, "oi.mod")
+        scanned := capture(fs.Scan(path))
+        if !scanned.Ok { return FailedModule(scanned.Failure); }
+        if scanned.Value.Kind == fs.Kind.File {
+            read := capture(fs.Read(path))
+            if !read.Ok { return FailedModule(read.Failure); }
+            return ParseModule(
+                directory, SelectedTarget(source, observed.Value, directory), path, read.Value)
+        }
+    }
+    return ModuleProbe{
+        Root: none, Target: none, Content: "", Module: none, Version: none,
+        ManifestPaths: []fs.Path{},
+        Diagnostics: []diagnostic.Diagnostic{
+            diagnostic.New("MISSING_MODULE_FILE", "module", SourceLocation(source), "nearest oi.mod"),
+        },
+    }
+}
+
+func ReadHeldModule(source fs.Path, module ModuleProbe) HeldModule {
+    var root fs.Path = PresentPath(module.Root)
+    if module.Version == "0.0.2" {
+        return ReadManifestSources(root, module.Target, module.ManifestPaths)
+    }
+    return ReadLegacySources(source, root, module.Target, PresentText(module.Module))
+}
+
+func ReadManifestSources(root fs.Path, target fs.Path?, paths []fs.Path) HeldModule {
+    var sources []Source = []Source{}
+    var diagnostics []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
+    for path in paths {
+        read := capture(fs.Read(JoinPath(root, path)))
+        if read.Ok {
+            sources = append(sources, Source{Path: path, Content: read.Value})
+        } else {
+            diagnostics = append(diagnostics, report.FromFailure(read.Failure))
+        }
+    }
+    return HeldModule{
+        Target: target, Sources: SortSources(sources), Entry: EntryPath(sources, target),
+        Diagnostics: diagnostics,
+    }
+}
+
+func ReadLegacySources(source fs.Path, root fs.Path, target fs.Path?, moduleName text) HeldModule {
+    scanned := capture(fs.Scan(source))
+    if !scanned.Ok {
+        return HeldModule{
+            Target: target, Sources: []Source{}, Entry: "main.oi",
+            Diagnostics: []diagnostic.Diagnostic{report.FromFailure(scanned.Failure)},
+        }
+    }
+    var pending []fs.Path = LegacyRootPaths(source, scanned.Value, root)
+    var sources []Source = []Source{}
+    var diagnostics []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
+    var visited []fs.Path = []fs.Path{}
+    var index int = 0
+    for index < len(pending) {
+        var absolute fs.Path = pending[index]
+        read := capture(fs.Read(absolute))
+        if read.Ok {
+            var relative fs.Path = RelativePath(root, absolute)
+            sources = append(sources, Source{Path: relative, Content: read.Value})
+            for imported in Imports(relative, read.Value) {
+                if !imported.Standard {
+                    var target ImportTarget = ResolveImport(root, moduleName, imported.Path)
+                    if target.Found && !ContainsPath(visited, target.Directory) {
+                        visited = append(visited, target.Directory)
+                        observed := capture(fs.Scan(target.Directory))
+                        if observed.Ok {
+                            var boundary []diagnostic.Diagnostic = ObserveLegacyBoundary(root, target.Directory)
+                            for item in boundary {
+                                diagnostics = append(diagnostics, item)
+                            }
+                            if len(boundary) == 0 {
+                                for path in LegacyPackagePaths(target.Directory, observed.Value) {
+                                    if !ContainsPath(pending, path) { pending = append(pending, path) }
+                                }
+                            }
+                        } else {
+                            diagnostics = append(diagnostics, report.FromFailure(observed.Failure))
+                        }
+                    }
+                }
+            }
+        } else {
+            diagnostics = append(diagnostics, report.FromFailure(read.Failure))
+        }
+        index = index + 1
+    }
+    var ordered []Source = SortSources(sources)
+    return HeldModule{
+        Target: target, Sources: ordered, Entry: EntryPath(ordered, target),
+        Diagnostics: diagnostics,
+    }
+}
+
+func ContainsPath(values []fs.Path, wanted fs.Path) bool {
+    for value in values {
+        if value == wanted { return true; }
+    }
+    return false
+}
+
+func FailedModule(value failure) ModuleProbe {
+    return ModuleProbe{
+        Root: none, Target: none, Content: "", Module: none, Version: none,
+        ManifestPaths: []fs.Path{},
+        Diagnostics: []diagnostic.Diagnostic{report.FromFailure(value)},
+    }
+}
+
+func ParseModule(root fs.Path, target fs.Path?, path fs.Path, content text) ModuleProbe {
+    return derive [parse exact UTF-8 {content} at {path} only as canonical oi.mod data. Require one
+        canonical module directive and one exact canonical oi version directive; retain an exact
+        unsupported version for availability checking. For 0.0.2 retain every canonical source path
+        in source order; for 0.0.1 require no source directives. Return exact deterministic
+        module-phase diagnostics for malformed, missing, duplicate, invalid-path, or unordered
+        directives, otherwise Root {root}, Target {target}, exact Content, Module, Version, paths,
+        and empty Diagnostics]
+}
+
+func PresentText(value text?) text { return derive [the exact present text in {value}] }
+
+func PresentPath(value fs.Path?) fs.Path { return derive [the exact present fs.Path in {value}] }
+
+func MetadataDirectories(source fs.Path, observed fs.Observation) []fs.Path {
+    return derive [the duplicate-free lexical ancestor directories nearest first, beginning with
+        {source} when {observed.Kind} is Directory and with its parent otherwise]
+}
+
+func SelectedTarget(source fs.Path, observed fs.Observation, root fs.Path) fs.Path? {
+    return derive [none when {observed.Kind} is Directory and normalized {source} equals {root};
+        the normalized {root}-relative {source} when it is a File or a Directory strictly beneath
+        {root}; otherwise none]
+}
+
+func LegacyRootPaths(source fs.Path, observed fs.Observation, root fs.Path) []fs.Path {
+    return derive [when {observed.Kind} is File and {source} ends in .oi return only {source}; when
+        Directory return its direct .oi file Entries in unsigned UTF-8 path-byte order; retain only
+        normalized paths within {root}; otherwise return empty]
+}
+
+func LegacyPackagePaths(directory fs.Path, observed fs.Observation) []fs.Path {
+    return derive [when {observed.Kind} is Directory return its direct .oi file Entries beneath
+        {directory} in unsigned UTF-8 path-byte order, otherwise empty]
+}
+
+func ObserveLegacyBoundary(root fs.Path, directory fs.Path) []diagnostic.Diagnostic {
+    for boundary in BoundaryDirectories(root, directory) {
+        var path fs.Path = Join(boundary, "oi.mod")
+        scanned := capture(fs.Scan(path))
+        if !scanned.Ok { return []diagnostic.Diagnostic{report.FromFailure(scanned.Failure)}; }
+        if scanned.Value.Kind == fs.Kind.File {
+            read := capture(fs.Read(path))
+            if !read.Ok { return []diagnostic.Diagnostic{report.FromFailure(read.Failure)}; }
+            var diagnostics []diagnostic.Diagnostic = NestedVersionDiagnostics(root, path, read.Value)
+            if len(diagnostics) != 0 { return diagnostics; }
+        }
+    }
+    return []diagnostic.Diagnostic{}
+}
+
+func BoundaryDirectories(root fs.Path, directory fs.Path) []fs.Path {
+    return derive [the normalized ancestor directories of {directory} strictly beneath {root},
+        nearest first, duplicate-free, never escaping or including {root}]
+}
+
+func NestedVersionDiagnostics(root fs.Path, path fs.Path, content text) []diagnostic.Diagnostic {
+    return derive [when canonical nested oi.mod {content} has one exact oi version token other than
+        0.0.1, return exactly one VERSION_CONFLICT module diagnostic at that token's normalized
+        {root}-relative path, line, and column, Detail the exact token, Trace empty; otherwise empty]
+}
+
+func Imports(path fs.Path, content text) []ImportProbe {
+    return derive [parse exact Oi 0.0.1 imports from {content} at {path}; return each exact Path in
+        source order and Standard true exactly for std/ imports]
+}
+
+func ResolveImport(root fs.Path, module text, imported text) ImportTarget {
+    return [Found true and Directory the normalized path beneath {root} selected by exact project
+        import {imported} when it is strictly within {module}; otherwise Found false and Directory
+        {root}]
+}
+
+func RelativePath(root fs.Path, absolute fs.Path) fs.Path {
+    return [the exact normalized relative path of {absolute} beneath {root}]
+}
+
+func Join(directory fs.Path, name text) fs.Path {
+    return [the normalized child path named {name} within {directory}]
+}
+
+func JoinPath(directory fs.Path, path fs.Path) fs.Path {
+    return [the normalized relative {path} beneath {directory}]
+}
+
+func SourceLocation(source fs.Path) text {
+    return [the normalized module-relative {source} location at line 1 column 1]
+}
+
+func SortSources(sources []Source) []Source {
+    return derive [the exact {sources} sorted by normalized unsigned UTF-8 Path bytes, retaining the
+        first item for an exact duplicate Path]
+}
+
+func EntryPath(sources []Source, target fs.Path?) fs.Path {
+    return derive [when present {target} equals a Source Path, return it; when present {target} is a
+        selected directory, return its direct main.oi Source Path when present, otherwise its first
+        direct Source Path; when {target} is none return root main.oi when present, otherwise the
+        first root Source Path; return main.oi only when no selected Source Path exists]
+}

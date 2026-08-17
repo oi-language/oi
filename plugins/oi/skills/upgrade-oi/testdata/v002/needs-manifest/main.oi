@@ -1,0 +1,7 @@
+package main
+
+import "oi/upgrade-fixtures/v002/needs-manifest/internal/message"
+
+func main(value text) {
+    message.Touch(value)
+}
