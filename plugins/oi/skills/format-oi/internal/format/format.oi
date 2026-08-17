@@ -6,6 +6,12 @@ import "oi/skills/format-oi/internal/model"
 import "oi/skills/format-oi/internal/render"
 import "oi/skills/format-oi/internal/report"
 
+type StrictManifestProbe struct {
+    Valid bool
+    Value model.Manifest?
+    Diagnostics []diagnostic.Diagnostic
+}
+
 func SourceStart(path fs.Path) text {
     return [the exact underlying UTF-8 path bytes of {path} followed by @0:1:1]
 }
@@ -23,6 +29,46 @@ func EffectFinding(cause failure) []diagnostic.Diagnostic {
         Detail: cause.Detail,
         Trace: cause.Trace,
     }}
+}
+
+func StrictProbeFailure(diagnostics []diagnostic.Diagnostic) StrictManifestProbe {
+    return StrictManifestProbe{
+        Valid: false,
+        Value: none,
+        Diagnostics: diagnostics,
+    }
+}
+
+func StrictProbeManifest(parsed model.ManifestAdmission) StrictManifestProbe {
+    return StrictManifestProbe{
+        Valid: parsed.Valid,
+        Value: parsed.Value,
+        Diagnostics: parsed.Diagnostics,
+    }
+}
+
+func FindNearestStrictManifest(target fs.Path) StrictManifestProbe {
+    for candidate in model.ManifestCandidates(target) {
+        var scanResult outcome[fs.Observation] = capture(fs.Scan(candidate))
+        if scanResult.Ok {
+            var observation fs.Observation = scanResult.Value
+            if observation.Kind == fs.Kind.File {
+                var readResult outcome[text] = capture(fs.Read(candidate))
+                if readResult.Ok {
+                    return StrictProbeManifest(model.ParseManifestForSource(candidate, readResult.Value))
+                } else {
+                    return StrictProbeFailure(EffectFinding(readResult.Failure))
+                }
+            }
+        } else {
+            return StrictProbeFailure(EffectFinding(scanResult.Failure))
+        }
+    }
+    var directory fs.Path = model.TargetDirectory(target)
+    var diagnostics []diagnostic.Diagnostic = []diagnostic.Diagnostic{
+        diagnostic.New("MISSING_MODULE_FILE", "module", model.Location(directory), "nearest oi.mod"),
+    }
+    return StrictProbeFailure(diagnostics)
 }
 
 func ReadWritten(target fs.Path, candidate text) report.FormatReport {
@@ -62,15 +108,15 @@ func WriteCandidate(target fs.Path, before text, candidate text) report.FormatRe
     }
 }
 
-func FormatSource(target fs.Path, available []text, before text) report.FormatReport {
-    var original model.Source = model.Parse(target, before)
+func FormatSource(target fs.Path, available []text, before text, version model.LanguageVersion) report.FormatReport {
+    var original model.Source = model.Parse(target, before, version)
     var originalDiagnostics []diagnostic.Diagnostic = model.Validate(original, available)
     if len(originalDiagnostics) != 0 {
         return report.Failed(target, false, before, originalDiagnostics)
     }
 
     var candidate text = render.Canonical(original)
-    var reparsed model.Source = model.Parse(target, candidate)
+    var reparsed model.Source = model.Parse(target, candidate, version)
     var candidateDiagnostics []diagnostic.Diagnostic = model.Validate(reparsed, available)
     if len(candidateDiagnostics) != 0 {
         return report.Failed(target, false, before, candidateDiagnostics)
@@ -85,11 +131,43 @@ func FormatSource(target fs.Path, available []text, before text) report.FormatRe
     return WriteCandidate(target, before, candidate)
 }
 
-func ReadTarget(target fs.Path, available []text) report.FormatReport {
+func FormatManifest(target fs.Path, before text) report.FormatReport {
+    var original model.ManifestRepair = model.ParseManifestForRepair(target, before)
+    if !original.Valid {
+        return report.Failed(target, false, before, original.Diagnostics)
+    }
+
+    var originalManifest model.Manifest = model.PresentManifest(original.Value)
+    var candidate text = render.CanonicalManifest(originalManifest)
+    var reparsed model.ManifestRepair = model.ParseManifestForRepair(target, candidate)
+    if !reparsed.Valid {
+        return report.Failed(target, false, before, reparsed.Diagnostics)
+    }
+    var candidateManifest model.Manifest = model.PresentManifest(reparsed.Value)
+    if !model.EquivalentManifest(originalManifest, candidateManifest) {
+        var diagnostics []diagnostic.Diagnostic = Finding(target, "FORMAT_NON_EQUIVALENT", "format-equivalence", "canonical rendering changed the typed manifest judgment")
+        return report.Failed(target, false, before, diagnostics)
+    }
+    if candidate == before {
+        return report.Unchanged(target, before)
+    }
+    return WriteCandidate(target, before, candidate)
+}
+
+func ReadManifestTarget(target fs.Path) report.FormatReport {
     var readResult outcome[text] = capture(fs.Read(target))
     if readResult.Ok {
         var source text = readResult.Value
-        return FormatSource(target, available, source)
+        return FormatManifest(target, source)
+    } else {
+        return report.Failed(target, false, none, EffectFinding(readResult.Failure))
+    }
+}
+
+func ReadSelectedSource(target fs.Path, available []text, manifest model.Manifest) report.FormatReport {
+    var readResult outcome[text] = capture(fs.Read(target))
+    if readResult.Ok {
+        return FormatSource(target, available, readResult.Value, manifest.Version)
     } else {
         return report.Failed(target, false, none, EffectFinding(readResult.Failure))
     }
@@ -103,7 +181,15 @@ func Format(target fs.Path, available []text) report.FormatReport {
             var diagnostics []diagnostic.Diagnostic = Finding(target, "FORMAT_TARGET_REQUIRED", "format-input", "target must identify exactly one Oi source file")
             return report.Failed(target, false, none, diagnostics)
         }
-        return ReadTarget(target, available)
+        if model.IsManifestTarget(target) {
+            return ReadManifestTarget(target)
+        }
+        var probe StrictManifestProbe = FindNearestStrictManifest(target)
+        if !probe.Valid {
+            return report.Failed(target, false, none, probe.Diagnostics)
+        }
+        var manifest model.Manifest = model.PresentManifest(probe.Value)
+        return ReadSelectedSource(target, available, manifest)
     } else {
         return report.Failed(target, false, none, EffectFinding(scanResult.Failure))
     }

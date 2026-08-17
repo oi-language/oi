@@ -1,0 +1,21 @@
+package    main;
+
+// collection comment stays byte-exact
+const Exact text="  [literal] {bytes} stay   exact  ";
+
+func main(){
+var values []text=[]text{"first","second",};
+var mapping map[text]int=map[text]int{"b":2,"a":1,};
+var members set[text]=set[text]{"z","a",};
+mapping=put(mapping,"c",3);
+members=add(members,"m");
+members=remove(members,"z");
+var present bool=has(mapping,"a");
+var count int=len(members);
+for index,value in values{
+}
+for key,value in mapping{
+}
+for value in members{
+}
+}

@@ -3,7 +3,7 @@ package render
 import "oi/skills/format-oi/internal/model"
 
 func Canonical(source model.Source) text {
-    return [the unique UTF-8 text produced from the validated typed tokens of {source} by this closed layout judgment;
+    return derive [the unique UTF-8 text produced from the validated exact-Version typed tokens of {source} by this closed layout transform;
         discard Whitespace and LineBreak tokens and omit Semicolon while preserving its grammar-derived terminator;
         emit package, each single import, each struct field, enum member, uses clause, contract clause, and simple statement on one line;
         emit one empty line between top-level declarations, no empty line inside a declaration, and exactly one final LF;
@@ -20,5 +20,17 @@ func Canonical(source model.Source) text {
         for all remaining adjacent emitted tokens, use exactly model.Adjacency on their TokenKind: Tight emits nothing and Space emits one ASCII space;
         copy TextLiteral, SemanticLiteral, and Comment Lexeme bytes exactly; leading comments occupy their own line and trailing comments use two spaces,
         with the physical comment ending normalized to LF; never reorder or reinterpret a non-formatting token;
+        for Oi0_0_2, treat map/set type brackets and literal braces by their parsed kinds, collection builtins as ordinary calls, a keyed or indexed for
+        binding comma as an inline Comma, and derive plus its SemanticLiteral as two word-like tokens separated by exactly one ASCII space; do not apply
+        those facts when Version is Oi0_0_1;
         reparsing the result and applying this same judgment emits byte-identical text, including the same multiline decisions and final LF]
+}
+
+func CanonicalManifest(manifest model.Manifest) text {
+    return derive [the unique UTF-8 oi.mod text for {manifest}: render ModuleTrivia then `module ` plus exact Module; render VersionTrivia then
+        `oi 0.0.1` or `oi 0.0.2` selected by Version; for Oi0_0_2 sort complete SourceDirective values by Path in strict unsigned UTF-8 path-byte
+        order and render each directive's Trivia followed by `source ` plus exact Path; Oi0_0_1 emits no source unit; finally render Trailing;
+        rendering DirectiveTrivia emits each Leading TriviaLine in order, Blank as one LF and Comment as exact Lexeme plus LF, then the directive;
+        append LF after every directive; render Trailing with the same TriviaLine rules; preserve comment bytes and blank-line ownership, use one
+        ASCII separator inside directives, no trailing formatting space, LF line endings, and exactly one terminal LF]
 }

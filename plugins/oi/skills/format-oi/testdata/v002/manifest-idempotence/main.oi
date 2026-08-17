@@ -1,0 +1,6 @@
+package   main;
+
+import  "oi.format-fixture.manifest/internal/alpha";
+import   "oi.format-fixture.manifest/internal/zeta";
+
+func main(){}

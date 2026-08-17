@@ -1,0 +1,11 @@
+package  main;
+
+type Inventory struct{Values []text;};
+
+func Build(source text)Inventory{
+var inventory Inventory=derive [decode and normalize {source}; preserve escaped \[semantic\] brackets and    spacing];
+return inventory;
+};
+
+func main(){
+}
