@@ -1,6 +1,7 @@
 package bench
 
 import "std/diagnostic"
+import "std/execution"
 import "std/fs"
 import "oi/skills/bench-oi/internal/report"
 
@@ -20,9 +21,15 @@ type Expected struct {
     FailureCategory text?
 }
 
+type CaseMode enum {
+    Compilation
+    Execution
+}
+
 type Case struct {
     Index int
     ID text
+    Mode CaseMode
     Target fs.Path
     Input text
     Observe text
@@ -34,9 +41,14 @@ type Suite struct {
     Cases []Case
 }
 
+effect CompileTarget(target fs.Path, input text, observe text, forbid text) report.TestReport {
+    uses tool.compile
+    contract [compile exact {target} in a fresh sealed compile context without invoking its entry or effects, report {observe} plus every {forbid} hit, and return no receipt or Reply digest]
+}
+
 effect InvokeTarget(target fs.Path, input text, observe text, forbid text) report.TestReport {
     uses agent.invoke
-    contract [run {target} with {input} in a fresh context and report {observe} plus every {forbid} hit]
+    contract [run exact {target} with {input} in a fresh sealed context, cross-bind target, source, input, mapping, authority, and policy identities, and report {observe} plus every {forbid} hit with its actual receipt and Reply digest]
 }
 
 func SameText(left []text, right []text) bool {
@@ -53,8 +65,235 @@ func SameText(left []text, right []text) bool {
     return true
 }
 
-func Compare(testCase Case, actual report.TestReport) report.CaseResult {
+func DigestValid(value text) bool {
+    return [true exactly when {value} consists of 64 lowercase ASCII hexadecimal digits]
+}
+
+func CanonicalText(values []text) bool {
+    var index int = 0
+    for index < len(values) {
+        if values[index] == "" || (index > 0 && values[index - 1] >= values[index]) {
+            return false
+        }
+        index = index + 1
+    }
+    return true
+}
+
+func SameIdentity(left execution.ValueIdentity, right execution.ValueIdentity) bool {
+    return left.Type == right.Type && left.Digest == right.Digest
+}
+
+func PresentText(value text?) text {
+    return [the exact present text in {value}]
+}
+
+func PresentIdentity(value execution.ValueIdentity?) execution.ValueIdentity {
+    return [the exact present execution.ValueIdentity in {value}]
+}
+
+func PresentReceipt(value execution.ExecutionReceipt?) execution.ExecutionReceipt {
+    return derive [the exact present execution.ExecutionReceipt in {value}]
+}
+
+func AuthoritiesDigest(values []text) text {
+    return [the lowercase 64-hex SHA-256 digest of frozen runtime/execution.md canonical Value bytes for ordered typed \[\]text {values}]
+}
+
+func MappingDigest(value execution.MappingIdentity) text {
+    return [the lowercase 64-hex SHA-256 digest of the frozen runtime/execution.md mapping record bytes for effect {value.Effect}, signature {value.Signature}, ordered authorities {value.Authorities}, and host mapping {value.HostMapping}]
+}
+
+func ManifestValid(values []text) bool {
+    return len(values) > 0 && CanonicalText(values)
+}
+
+func ArtifactsValid(values []execution.ArtifactIdentity) bool {
+    if len(values) == 0 {
+        return false
+    }
+    var paths []text = []text{}
+    for value in values {
+        if value.Path == "" || value.Bytes < 0 || value.Characters < 0 || !DigestValid(value.SHA256) {
+            return false
+        }
+        for path in paths {
+            if path == value.Path {
+                return false
+            }
+        }
+        paths = append(paths, value.Path)
+    }
+    return true
+}
+
+func InputsValid(values []execution.ValueIdentity) bool {
+    if len(values) != 1 || values[0].Type != "text" {
+        return false
+    }
+    return DigestValid(values[0].Digest)
+}
+
+func MappingsValid(values []execution.MappingIdentity) bool {
+    if len(values) == 0 {
+        return false
+    }
+    for value in values {
+        if value.Effect == "" || value.Signature == "" || value.HostMapping == "" || !CanonicalText(value.Authorities) ||
+            !DigestValid(value.Digest) || value.Digest != MappingDigest(value) {
+            return false
+        }
+    }
+    return true
+}
+
+func HasAuthority(values []text, expected text) bool {
+    for value in values {
+        if value == expected {
+            return true
+        }
+    }
+    return false
+}
+
+func AuthoritiesValid(receipt execution.ExecutionReceipt) bool {
+    return CanonicalText(receipt.Authorities) && HasAuthority(receipt.Authorities, "caller.reply") &&
+        receipt.AuthoritiesIdentity.Type == "[]text" && DigestValid(receipt.AuthoritiesIdentity.Digest) &&
+        receipt.AuthoritiesIdentity.Digest == AuthoritiesDigest(receipt.Authorities)
+}
+
+func PolicyValid(value execution.ValueIdentity?) bool {
+    if value == none {
+        return false
+    }
+    var identity execution.ValueIdentity = PresentIdentity(value)
+    return identity.Type == "policy" && DigestValid(identity.Digest)
+}
+
+func ReplyOperationValid(receipt execution.ExecutionReceipt) bool {
+    if receipt.ReplyOperationID == none || receipt.Reply == none {
+        return false
+    }
+    var replyID text = PresentText(receipt.ReplyOperationID)
+    var reply execution.ValueIdentity = PresentIdentity(receipt.Reply)
+    if reply.Type == "" || !DigestValid(reply.Digest) {
+        return false
+    }
+    var started bool = false
+    var completed bool = false
+    var location text = ""
+    for operation in receipt.Operations {
+        if operation.ID == replyID && operation.Kind == execution.OperationKind.Reply {
+            if len(operation.Inputs) != 1 || !SameIdentity(operation.Inputs[0], reply) || operation.Failure != none {
+                return false
+            }
+            if operation.Status == execution.OperationStatus.Started {
+                if started || completed || operation.Output != none {
+                    return false
+                }
+                started = true
+                location = operation.Location
+            } else if operation.Status == execution.OperationStatus.Completed {
+                if !started || completed || operation.Location != location || operation.Output == none {
+                    return false
+                }
+                var output execution.ValueIdentity = PresentIdentity(operation.Output)
+                if output.Type != "unit" || !DigestValid(output.Digest) {
+                    return false
+                }
+                completed = true
+            } else {
+                return false
+            }
+        }
+    }
+    return started && completed
+}
+
+func ExecutionDifference(actual report.TestReport) text? {
+    if actual.Receipt == none {
+        return "receipt"
+    }
+    var receipt execution.ExecutionReceipt = PresentReceipt(actual.Receipt)
+    if receipt.LanguageVersion != "Oi 0.0.2" {
+        return "receipt-language-version"
+    }
+    if receipt.Module == "" {
+        return "receipt-module"
+    }
+    if !ManifestValid(receipt.Manifest) {
+        return "receipt-manifest"
+    }
+    if !ArtifactsValid(receipt.Artifacts) {
+        return "receipt-artifacts"
+    }
+    if !InputsValid(receipt.Inputs) {
+        return "receipt-inputs"
+    }
+    if !MappingsValid(receipt.Mappings) {
+        return "receipt-mappings"
+    }
+    if !AuthoritiesValid(receipt) {
+        return "receipt-authorities"
+    }
+    if !PolicyValid(receipt.Policy) {
+        return "receipt-policy"
+    }
+    if receipt.Entry != "main" {
+        return "receipt-entry"
+    }
+    if receipt.LoadedCharacters <= 0 || receipt.ProjectCharacters <= 0 {
+        return "receipt-characters"
+    }
+    if receipt.Terminal != execution.TerminalStatus.Completed || receipt.Failure != none {
+        return "receipt-terminal"
+    }
+    if receipt.ReplyOperationID == none {
+        return "receipt-reply-operation"
+    }
+    if receipt.Reply == none {
+        return "receipt-reply"
+    }
+    if actual.ReplyDigest == none {
+        return "reply-digest"
+    }
+    var reply execution.ValueIdentity = PresentIdentity(receipt.Reply)
+    if PresentText(actual.ReplyDigest) != reply.Digest {
+        return "reply-digest"
+    }
+    if !ReplyOperationValid(receipt) {
+        return "receipt-reply-operation"
+    }
+    return none
+}
+
+func EvidenceDifference(testCase Case, actual report.TestReport) text? {
+    if testCase.Mode == CaseMode.Compilation {
+        if actual.Receipt != none {
+            return "compilation-receipt"
+        }
+        if actual.ReplyDigest != none {
+            return "compilation-reply-digest"
+        }
+        return none
+    }
+    if actual.LanguageVersion == "0.0.1" {
+        if actual.Receipt != none || actual.ReplyDigest != none {
+            return "legacy-execution-evidence"
+        }
+        return none
+    }
+    if actual.LanguageVersion == "0.0.2" {
+        return ExecutionDifference(actual)
+    }
+    return "language-version"
+}
+
+func Compare(testCase Case, actual report.TestReport, identity RunIdentity) report.CaseResult {
     var differences []text = []text{}
+    if actual.LanguageVersion != identity.LanguageVersion {
+        differences = append(differences, "language-version")
+    }
     if testCase.Expected.Status != actual.Status {
         differences = append(differences, "status")
     }
@@ -69,6 +308,12 @@ func Compare(testCase Case, actual report.TestReport) report.CaseResult {
     var actualFailure text? = report.FailureCategory(actual)
     if testCase.Expected.FailureCategory != actualFailure {
         differences = append(differences, "failure-category")
+    }
+    if actual.LanguageVersion == identity.LanguageVersion {
+        var evidenceDifference text? = EvidenceDifference(testCase, actual)
+        if evidenceDifference ~= [is present] {
+            differences = append(differences, [the exact present text in {evidenceDifference}])
+        }
     }
     return report.CaseResult{
         Index: testCase.Index,
@@ -96,6 +341,9 @@ func FailedCase(testCase Case, problem failure) report.CaseResult {
         Observations: []text{},
         ForbiddenHits: []text{},
         Failure: finding,
+        LanguageVersion: "",
+        Receipt: none,
+        ReplyDigest: none,
     }
     return report.CaseResult{
         Index: testCase.Index,
@@ -106,21 +354,30 @@ func FailedCase(testCase Case, problem failure) report.CaseResult {
     }
 }
 
-func Test(testCase Case, results sender[report.CaseResult]) unit {
-    var attempt outcome[report.TestReport] = capture(InvokeTarget(testCase.Target, testCase.Input, testCase.Observe, testCase.Forbid))
+func EmitAttempt(testCase Case, identity RunIdentity, attempt outcome[report.TestReport], results sender[report.CaseResult]) unit {
     if attempt.Ok {
-        send(results, Compare(testCase, attempt.Value))
+        send(results, Compare(testCase, attempt.Value, identity))
     } else {
         send(results, FailedCase(testCase, attempt.Failure))
     }
+}
+
+func Test(testCase Case, identity RunIdentity, results sender[report.CaseResult]) unit {
+    if testCase.Mode == CaseMode.Compilation {
+        var compileAttempt outcome[report.TestReport] = capture(CompileTarget(testCase.Target, testCase.Input, testCase.Observe, testCase.Forbid))
+        EmitAttempt(testCase, identity, compileAttempt, results)
+        return
+    }
+    var executionAttempt outcome[report.TestReport] = capture(InvokeTarget(testCase.Target, testCase.Input, testCase.Observe, testCase.Forbid))
+    EmitAttempt(testCase, identity, executionAttempt, results)
 }
 
 func IdentityDiagnostics(identity RunIdentity) []diagnostic.Diagnostic {
     if len(identity.Harness) == 0 || len(identity.Model) == 0 || len(identity.PluginVersion) == 0 {
         return []diagnostic.Diagnostic{diagnostic.New("BENCH_IDENTITY_INCOMPLETE", "input binding", "main.oi:1:1", "run identity fields must be non-empty")}
     }
-    if identity.LanguageVersion != "0.0.1" {
-        return []diagnostic.Diagnostic{diagnostic.New("BENCH_IDENTITY_LANGUAGE_VERSION", "input binding", "main.oi:1:1", "language version must be exactly 0.0.1")}
+    if identity.LanguageVersion != "0.0.1" && identity.LanguageVersion != "0.0.2" {
+        return []diagnostic.Diagnostic{diagnostic.New("BENCH_IDENTITY_LANGUAGE_VERSION", "input binding", "main.oi:1:1", "language version must be exactly 0.0.1 or 0.0.2")}
     }
     return []diagnostic.Diagnostic{}
 }
@@ -191,7 +448,7 @@ func Run(suite Suite, identity RunIdentity) report.BenchmarkReport {
     }
     var results channel[report.CaseResult] = channel[report.CaseResult](1)
     for testCase in suite.Cases {
-        oi Test(testCase, results.Send)
+        oi Test(testCase, identity, results.Send)
     }
     return CollectInCaseIndexOrder(suite, results.Receive, identity)
 }

@@ -1,12 +1,16 @@
 package report
 
 import "std/diagnostic"
+import "std/execution"
 
 type TestReport struct {
     Status text
     Observations []text
     ForbiddenHits []text
     Failure diagnostic.Diagnostic?
+    LanguageVersion text
+    Receipt execution.ExecutionReceipt?
+    ReplyDigest text?
 }
 
 type CaseResult struct {

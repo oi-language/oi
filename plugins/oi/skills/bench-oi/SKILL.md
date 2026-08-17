@@ -1,12 +1,12 @@
 ---
 name: bench-oi
-description: Use when an Agent needs to run a structured Oi 0.0.1 conformance suite against an explicitly identified harness and model.
+description: Use when an Agent needs to run a structured Oi conformance suite against an explicitly identified harness and model.
 ---
 
 # Bench Oi
 
-Use the colocated `oi.mod` and `main.oi` through the local `using-oi` bootstrap. For each request, load the resolved exact Oi 0.0.1 `execution.md` exactly once, close its prefix manifest from the parsed reachable graph, and never read the base specification again.
+Use the colocated `oi.mod` and `main.oi` through the local `using-oi` bootstrap. Load exact Oi 0.0.2 `execution.md` once, close the manifested graph, and never reread the base specification.
 
-Bind typed caller inputs to the host-only lowercase resultless entry exactly as `func main(suite bench.Suite, identity bench.RunIdentity)`. Map `bench.InvokeTarget(target fs.Path, input text, observe text, forbid text) report.TestReport` to `agent.invoke` with a fresh target context, and map `effect Reply(value report.BenchmarkReport) unit` to `caller.reply`.
+Bind inputs to `func main(suite bench.Suite, identity bench.RunIdentity)`. Map `CompileTarget(target,input,observe,forbid)` to `tool.compile`: sealed compile, target code zero, evidence absent. Map unchanged `InvokeTarget(target,input,observe,forbid)` to `agent.invoke`: sealed fresh run, actual receipt/digest. Both set LanguageVersion from target's nearest exact `oi.mod`; CompileTarget cross-binds target/version/source only. Before InvokeTarget returns, reject the first mismatch in `Target→LanguageVersion→Artifacts(manifest/source order)→Inputs→Mappings→Authorities→AuthoritiesIdentity→Policy→Entry→Terminal→ReplyOperationID→Reply.Digest` as `BENCH_EVIDENCE_MISMATCH|runtime|target:1:1|sealed invocation mismatch: <FieldPath>|[]`. Map `Reply` to `caller.reply`.
 
-Host-invoke `main` exactly once. Capture exactly one typed `report.BenchmarkReport` payload from `Reply` and expose it unchanged. Do not Oi-call `main`, infer an entry return, parse display text, or copy benchmark or runtime algorithms into this adapter.
+Host-invoke `main` once and expose its one typed `BenchmarkReport` Reply unchanged. Do not Oi-call `main`, infer a result, encode mode in text or fixture names, reuse one host effect then discard evidence, accept expected prose as evidence, or copy benchmark/runtime algorithms.
