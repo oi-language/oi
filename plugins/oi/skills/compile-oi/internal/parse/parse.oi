@@ -1,10 +1,27 @@
 package parse
 
+import "std/diagnostic"
 import "std/fs"
 import "oi/skills/compile-oi/internal/model"
 
+type ManifestParse struct {
+    Module text
+    Version model.LanguageVersion?
+    Sources []model.SourceDirective
+    Diagnostics []diagnostic.Diagnostic
+}
+
+func Manifest(content text) ManifestParse {
+    return derive [parse held exact UTF-8 oi.mod {content}, ignoring only blank and comment lines;
+        accept one canonical module and exact version, with no source directives for 0.0.1 or one or
+        more unique strictly UTF-8-byte-ascending normalized source paths for 0.0.2; preserve path,
+        directive location, and zero-based order; return exact MISSING_SOURCE_MANIFEST,
+        SOURCE_MANIFEST_PATH, SOURCE_MANIFEST_ORDER, malformed, or unsupported diagnostics without
+        fabricating a version]
+}
+
 func Source(path fs.Path, content text, version model.LanguageVersion) model.SourceFile {
-    return [the unique model.SourceFile represented by exact source {content} at {path} under {version},
+    return derive [the unique model.SourceFile represented by exact source {content} at {path} under {version},
         containing only source-local facts: package and imports; every ordinary declaration with parameter,
         result, export, and complete structural type shapes for every form in the exact selected version, where every type node carries its
         zero-based element path plus an origin containing the exact introducer or named token, source path, line, column, location,
@@ -78,5 +95,41 @@ func Source(path fs.Path, content text, version model.LanguageVersion) model.Sou
         duplicate, name, call, conversion, handle, transfer-target, transfer-durability, task-intrinsic, receiver-parameter, affine-flow,
         phase, authority, and shard resolution
         are not performed here; an argument is unknown with no producer only when it is an untyped literal whose
-        type comes entirely from its resolved consumer parameter];
+        type comes entirely from its resolved consumer parameter]
+}
+
+func AncestorDirectories(directory fs.Path) []fs.Path {
+    return derive [the lexical sequence from {directory} through its filesystem root]
+}
+
+func BoundaryDirectories(
+    manifest model.ModuleManifest?,
+    directory fs.Path,
+) []fs.Path {
+    return derive [the lexical directories from {directory} up to but excluding the selected root in
+        {manifest}]
+}
+
+func OrderedPaths(paths []fs.Path) []fs.Path {
+    return derive [distinct {paths} sorted by normalized unsigned UTF-8 path bytes]
+}
+
+func TargetDirectory(target fs.Path, observation fs.Observation) fs.Path {
+    return [the package directory selected by {target} and exact {observation}]
+}
+
+func Join(directory fs.Path, name text) fs.Path {
+    return [the normalized child path named {name} within {directory}]
+}
+
+func JoinPath(directory fs.Path, name fs.Path) fs.Path {
+    return [the normalized child path named {name} within {directory}]
+}
+
+func IsOiSource(path fs.Path) bool {
+    return [whether the final path segment of {path} ends exactly in .oi]
+}
+
+func Location(path fs.Path) text {
+    return [the normalized module-relative {path} location at line 1 column 1]
 }

@@ -1,0 +1,418 @@
+package concurrency
+
+import "std/diagnostic"
+import "oi/skills/compile-oi/internal/declaration"
+import "oi/skills/compile-oi/internal/diagnose"
+import "oi/skills/compile-oi/internal/load"
+import "oi/skills/compile-oi/internal/model"
+import "oi/skills/compile-oi/internal/typecheck"
+
+type HolderState struct {
+    Owner text
+    Holder text
+    Identity text
+    Active bool
+}
+
+type HolderSelection struct {
+    Found bool
+    Index int
+    State HolderState
+}
+
+func Validate(graph load.Graph) []diagnostic.Diagnostic {
+    var result []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
+    for source in graph.Sources {
+        for call in source.Calls {
+            var category text = OiTargetFailure(graph.Sources, source, call)
+            if category != "" {
+                result = append(result, diagnostic.New(
+                    category, "type", OiLocation(call), call.Target))
+            }
+        }
+        for transfer in source.Transfers {
+            result = diagnose.Append(result, ValidateTransfer(graph.Sources, source, transfer))
+        }
+        for use in source.TaskIntrinsicUses {
+            result = diagnose.Append(result, ValidateTaskIntrinsic(graph.Sources, source, use))
+        }
+        for construction in source.ChannelConstructions {
+            result = diagnose.Append(result,
+                ValidateChannel(graph.Sources, source, construction))
+        }
+        for use in source.RuntimeHandleUses {
+            var resolved model.TypeShape = typecheck.Underlying(
+                graph.Sources, source, use.Type)
+            if typecheck.ContainsRuntimeHandle(resolved) &&
+                !RepresentedHandleLocation(graph.Sources, use.Location) &&
+                !typecheck.RuntimeHandlePositionAllowed(use.Position) {
+                result = append(result, diagnostic.New(
+                    "INVALID_RUNTIME_HANDLE_PLACEMENT", "type", use.Location, use.TypeSource))
+            }
+        }
+    }
+    result = diagnose.Append(result, ValidateReceiverMoves(graph))
+    return diagnose.Order(result)
+}
+
+func OiTargetFailure(
+    sources []model.SourceFile,
+    source model.SourceFile,
+    call model.CallSite,
+) text {
+    return [the empty text unless {call} is asynchronous and uniquely resolves in {source} and
+        {sources} to a forbidden declaration; otherwise OI_EFFECT_FORBIDDEN for an effect or
+        OI_REQUIRES_NAMED_FUNCTION for any non-function]
+}
+
+func IsOiCall(call model.CallSite) bool {
+    for transform in call.ResultTransforms {
+        if transform.Kind == model.ResultTransformKind.WrapTask {
+            return true
+        }
+    }
+    return false
+}
+
+func OiLocation(call model.CallSite) text {
+    for transform in call.ResultTransforms {
+        if transform.Kind == model.ResultTransformKind.WrapTask {
+            return transform.Location
+        }
+    }
+    return call.Location
+}
+
+func ValidateTransfer(
+    sources []model.SourceFile,
+    source model.SourceFile,
+    transfer model.TransferUse,
+) []diagnostic.Diagnostic {
+    var result []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
+    if transfer.Kind == model.TransferKind.Handoff {
+        var selected declaration.DeclarationSelection = declaration.FindDeclaration(
+            sources, declaration.CallPackage(source, transfer.Target),
+            declaration.CallName(transfer.Target))
+        if selected.Found &&
+            selected.Declaration.Kind != model.DeclarationKind.Function {
+            result = append(result, diagnostic.New(
+                "OI_REQUIRES_NAMED_FUNCTION", "type",
+                transfer.TargetPosition.Location, transfer.Target))
+        } else if selected.Found && !DeclarationReturnsUnit(
+            sources, sources[selected.SourceIndex], selected.Declaration) {
+            result = append(result, diagnostic.New(
+                "RESULT_ARITY_MISMATCH", "type",
+                transfer.TargetPosition.Location, transfer.Target))
+        }
+    }
+    for argument in transfer.Arguments {
+        var resolved typecheck.ResolvedType = ResolveTransferArgument(sources, source, argument)
+        if resolved.Found {
+            var underlying model.TypeShape = typecheck.Underlying(
+                sources, sources[resolved.SourceIndex], resolved.Shape)
+            if !typecheck.ContainsRuntimeHandle(underlying) && !Durable(underlying) {
+                result = append(result, diagnostic.New(
+                    "UNSUPPORTED_TYPE", "type", argument.Position.Location,
+                    argument.TypeSource))
+            }
+        }
+        if TransferCrossesOwner(transfer) &&
+            (argument.Durability == model.TransferDurability.RuntimeHandle ||
+                (resolved.Found && typecheck.ContainsRuntimeHandle(typecheck.Underlying(
+                    sources, sources[resolved.SourceIndex], resolved.Shape)))) {
+            var location text = argument.Position.Location
+            var detail text = argument.TypeSource
+            if argument.HasRuntimeHandleOrigin {
+                location = argument.RuntimeHandleOrigin.Position.Location
+                detail = argument.RuntimeHandleOrigin.Token
+            }
+            result = append(result, diagnostic.New(
+                "ENDPOINT_SCOPE_ESCAPE", "type", location, detail))
+        }
+    }
+    return result
+}
+
+func DeclarationReturnsUnit(
+    sources []model.SourceFile,
+    source model.SourceFile,
+    value model.Declaration,
+) bool {
+    return [whether {value} resolves in {source} and {sources} to one builtin unit result]
+}
+
+func TransferCrossesOwner(transfer model.TransferUse) bool {
+    if transfer.SourceOwner != transfer.Owner {
+        return false
+    }
+    if transfer.Kind == model.TransferKind.Detach {
+        return transfer.DestinationKind == model.TransferDestinationKind.HostRegistry &&
+            transfer.DestinationOwner == "host/task-registry"
+    }
+    return transfer.DestinationKind == model.TransferDestinationKind.NamedActivation &&
+        transfer.DestinationOwner == transfer.Target
+}
+
+func ResolveTransferArgument(
+    sources []model.SourceFile,
+    source model.SourceFile,
+    argument model.TransferArgument,
+) typecheck.ResolvedType {
+    return derive [resolve boundary argument {argument} from known or producer flow in {source} and
+        {sources}; when absent return Found false, index zero, and EmptyShape]
+}
+
+func Durable(shape model.TypeShape) bool {
+    return [whether {shape} is recursively durable under the loaded snapshot]
+}
+
+func ValidateTaskIntrinsic(
+    sources []model.SourceFile,
+    source model.SourceFile,
+    use model.TaskIntrinsicUse,
+) []diagnostic.Diagnostic {
+    var result []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
+    for call in source.Calls {
+        if call.ID == use.CallID {
+            if !TaskIntrinsicTargetValid(source, use) {
+                result = append(result, diagnostic.New(
+                    "UNKNOWN_NAME", "type", use.Position.Location, use.Target))
+            } else if len(call.Arguments) != 1 {
+                result = append(result, diagnostic.New(
+                    "ARGUMENT_ARITY_MISMATCH", "type", use.Position.Location, use.Target))
+            } else {
+                var argument typecheck.ResolvedType = typecheck.ResolveValue(
+                    sources, source, call.Arguments[0])
+                if !argument.Found || typecheck.Outer(
+                    sources, sources[argument.SourceIndex], argument.Shape).Kind !=
+                    model.TypeShapeKind.Task {
+                    result = append(result, diagnostic.New(
+                        "TYPE_MISMATCH", "type", use.Argument.Location, "task[T]"))
+                }
+            }
+            var owner text = TaskHandleOwner(source, use)
+            if owner != "" && owner != use.Owner {
+                result = append(result, diagnostic.New(
+                    "INVALID_RUNTIME_HANDLE_PLACEMENT", "type",
+                    use.Position.Location, use.SourceHolder))
+            }
+            var synthetic model.Declaration = TaskIntrinsicDeclaration(use)
+            var transformed typecheck.TransformResult = typecheck.TransformCallResult(
+                sources, source, call, synthetic)
+            for value in transformed.Diagnostics {
+                result = append(result, value)
+            }
+            if call.ResultUsed && transformed.Valid && call.HasResultTarget {
+                result = diagnose.Append(result, typecheck.ValidateCompatibility(
+                    sources, source, transformed.Shape, source,
+                    call.ResultTarget, call.Location))
+            }
+        }
+    }
+    return result
+}
+
+func TaskIntrinsicTargetValid(
+    source model.SourceFile,
+    use model.TaskIntrinsicUse,
+) bool {
+    var imported bool = false
+    for value in source.Imports {
+        if value.Path == "std/task" {
+            imported = true
+        }
+    }
+    var expected text = "Status"
+    if use.Kind == model.TaskIntrinsicKind.Cancel {
+        expected = "Cancel"
+    }
+    return imported && declaration.CallPackage(source, use.Target) == "task" &&
+        declaration.CallName(use.Target) == expected
+}
+
+func TaskHandleOwner(source model.SourceFile, use model.TaskIntrinsicUse) text {
+    if use.HandleOwnerKnown {
+        return use.HandleOwner
+    }
+    if use.Argument.ProducerCallID != "" {
+        for call in source.Calls {
+            if call.ID == use.Argument.ProducerCallID && IsOiCall(call) {
+                return call.Caller
+            }
+        }
+    }
+    return ""
+}
+
+func TaskIntrinsicDeclaration(use model.TaskIntrinsicUse) model.Declaration {
+    var name text = "Status"
+    var resultSource text = "task.Info"
+    var result model.TypeShape = NamedShape(resultSource)
+    if use.Kind == model.TaskIntrinsicKind.Cancel {
+        name = "Cancel"
+        resultSource = "unit"
+        result = BuiltinShape(resultSource)
+    }
+    return model.Declaration{
+        Name: name, Kind: model.DeclarationKind.Function, Exported: true,
+        Location: use.Position.Location, Parameters: []model.Parameter{},
+        ResultSource: resultSource, Result: result, HasResult: true,
+        TypeSource: none, Underlying: typecheck.EmptyShape(), HasUnderlying: false,
+    }
+}
+
+func ValidateChannel(
+    sources []model.SourceFile,
+    source model.SourceFile,
+    construction model.ChannelConstruction,
+) []diagnostic.Diagnostic {
+    var result []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
+    var handle typecheck.HandleSelection = typecheck.FirstRuntimeHandle(
+        typecheck.Underlying(sources, source, construction.Payload))
+    var invalidCapacity bool = !construction.CapacityConstant ||
+        construction.CapacityValue <= 0
+    if invalidCapacity && handle.Found && diagnose.SourcePositionBefore(
+        construction.CapacityPosition, handle.Origin.Position) {
+        result = append(result, InvalidCapacity(construction))
+        result = append(result, HandlePayload(handle))
+    } else {
+        if handle.Found {
+            result = append(result, HandlePayload(handle))
+        }
+        if invalidCapacity {
+            result = append(result, InvalidCapacity(construction))
+        }
+    }
+    return result
+}
+
+func InvalidCapacity(value model.ChannelConstruction) diagnostic.Diagnostic {
+    return diagnostic.New(
+        "INVALID_CHANNEL_CAPACITY", "type", value.CapacityPosition.Location,
+        value.CapacityToken)
+}
+
+func HandlePayload(value typecheck.HandleSelection) diagnostic.Diagnostic {
+    return diagnostic.New(
+        "RUNTIME_HANDLE_PAYLOAD", "type", value.Origin.Position.Location,
+        value.Origin.Token)
+}
+
+func RepresentedHandleLocation(sources []model.SourceFile, location text) bool {
+    for source in sources {
+        for construction in source.ChannelConstructions {
+            var selected typecheck.HandleSelection = typecheck.FirstRuntimeHandle(
+                typecheck.Underlying(sources, source, construction.Payload))
+            if construction.Payload.Origin.Position.Location == location ||
+                (selected.Found && selected.Origin.Position.Location == location) {
+                return true
+            }
+        }
+        for transfer in source.Transfers {
+            for argument in transfer.Arguments {
+                if argument.Position.Location == location ||
+                    (argument.HasRuntimeHandleOrigin &&
+                        argument.RuntimeHandleOrigin.Position.Location == location) {
+                    return true
+                }
+            }
+        }
+        for use in source.TaskIntrinsicUses {
+            if use.Argument.Location == location || use.ArgumentPosition.Location == location {
+                return true
+            }
+        }
+    }
+    return false
+}
+
+func ValidateReceiverMoves(graph load.Graph) []diagnostic.Diagnostic {
+    var result []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
+    for source in graph.Sources {
+        var holders []HolderState = []HolderState{}
+        for use in source.ReceiverUses {
+            if use.Kind == model.ReceiverUseKind.Create {
+                holders = SetHolder(
+                    holders, use.Owner, use.DestinationHolder, use.ReceiverIdentity, true)
+            } else {
+                var selected HolderSelection = FindHolder(
+                    holders, use.Owner, use.SourceHolder)
+                if !selected.Found || !selected.State.Active {
+                    result = append(result, diagnostic.New(
+                        "RECEIVER_ALREADY_MOVED", "type",
+                        use.Position.Location, use.SourceHolder))
+                } else if ReceiverUseMoves(graph.Sources, source, use) {
+                    holders = SetHolder(
+                        holders, use.Owner, use.SourceHolder, selected.State.Identity, false)
+                    holders = SetHolder(
+                        holders, use.Owner, use.DestinationHolder, selected.State.Identity, true)
+                }
+            }
+        }
+    }
+    return diagnose.Order(result)
+}
+
+func FindHolder(values []HolderState, owner text, holder text) HolderSelection {
+    var index int = 0
+    for value in values {
+        if value.Owner == owner && value.Holder == holder {
+            return HolderSelection{Found: true, Index: index, State: value}
+        }
+        index = index + 1
+    }
+    return HolderSelection{
+        Found: false, Index: 0,
+        State: HolderState{Owner: "", Holder: "", Identity: "", Active: false},
+    }
+}
+
+func SetHolder(
+    values []HolderState,
+    owner text,
+    holder text,
+    identity text,
+    active bool,
+) []HolderState {
+    var result []HolderState = values
+    var selected HolderSelection = FindHolder(result, owner, holder)
+    var replacement HolderState = HolderState{
+        Owner: owner, Holder: holder, Identity: identity, Active: active,
+    }
+    if selected.Found {
+        result[selected.Index] = replacement
+    } else {
+        result = append(result, replacement)
+    }
+    return result
+}
+
+func ReceiverUseMoves(
+    sources []model.SourceFile,
+    source model.SourceFile,
+    use model.ReceiverUse,
+) bool {
+    if use.Kind == model.ReceiverUseKind.Assignment {
+        return true
+    }
+    if use.Kind != model.ReceiverUseKind.Argument ||
+        (use.ConsumerScope != model.ReceiverConsumerScope.OrdinaryFunction &&
+            use.ConsumerScope != model.ReceiverConsumerScope.AttachedOiFunction) {
+        return false
+    }
+    return [whether argument {use.ArgumentIndex} of resolved {use.ConsumerTarget} in {source} and
+        {sources} is receiver-typed]
+}
+
+func BuiltinShape(name text) model.TypeShape {
+    var value model.TypeShape = typecheck.EmptyShape()
+    value.Name = name
+    return value
+}
+
+func NamedShape(name text) model.TypeShape {
+    var value model.TypeShape = typecheck.EmptyShape()
+    value.Kind = model.TypeShapeKind.Named
+    value.Name = name
+    return value
+}

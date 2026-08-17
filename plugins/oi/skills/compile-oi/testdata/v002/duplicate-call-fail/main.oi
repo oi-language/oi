@@ -1,0 +1,13 @@
+package main
+
+func Build(value text) text {
+    return value
+}
+
+func Build(value text) text {
+    return value
+}
+
+func main() {
+    var result text = Build("ready")
+}

@@ -85,7 +85,7 @@ func WithType(value model.LegacyEffectValue, typeID int) legacy_model.Value {
 }
 
 func Compute(program model.Program, step model.ComputeStep, inputs []legacy_model.Value) legacy_model.ValueResult {
-    return [the unique explicit Oi 0.0.1 value-or-failure result produced by {step.Kind} at {step.Location} from already evaluated typed {inputs} and closed {program};
+    return derive [the unique explicit Oi 0.0.1 value-or-failure result produced by {step.Kind} at {step.Location} from already evaluated typed {inputs} and closed {program};
         implement exact unary, arithmetic, comparison, boolean, length, slice/struct/optional construction, append, index, field, named conversion, semantic match/generate rules;
         use {step.ResultTypeID}, {step.MemberName}, {step.CompositeFieldNames}, and {step.SemanticSiteID} only for their declared kind;
         success has one Value with exact result TypeID, released canonical text, and named identity only for a named result, plus Failure none;
@@ -100,7 +100,7 @@ func Compute(program model.Program, step model.ComputeStep, inputs []legacy_mode
 
 func Store(program model.Program, base legacy_model.Value, path model.SelectorPath, indexes []legacy_model.Value,
     value legacy_model.Value, location text) legacy_model.ValueResult {
-    return [the unique explicit Oi 0.0.1 value-or-failure result from validating {path} against {program}, applying already evaluated {indexes} and copied {value} to {base} at {location};
+    return derive [the unique explicit Oi 0.0.1 value-or-failure result from validating {path} against {program}, applying already evaluated {indexes} and copied {value} to {base} at {location};
         success rebuilds every selected struct/slice parent alias-free and returns one Value preserving base TypeID/NamedIdentity with exact released canonical text, plus Failure none;
         the first index outside zero through its current slice length minus one returns Value none and diagnostic INDEX_OUT_OF_RANGE, runtime, {location},
             Detail exact index I out of range for length N using canonical signed I and nonnegative N, and empty Trace;

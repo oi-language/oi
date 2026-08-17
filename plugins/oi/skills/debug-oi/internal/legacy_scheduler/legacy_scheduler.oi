@@ -23,7 +23,7 @@ func TaskIndex(machine legacy_model.Machine, taskID text) int {
 }
 
 func PresentFrame(value legacy_model.Frame?) legacy_model.Frame {
-    return [the exact present legacy_model.Frame in {value}]
+    return derive [the exact present legacy_model.Frame in {value}]
 }
 
 func Current(machine legacy_model.Machine, taskIndex int) legacy_model.Activation {

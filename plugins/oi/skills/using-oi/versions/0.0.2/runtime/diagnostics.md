@@ -10,6 +10,8 @@ Phase order: `parse`, `module`, `type`, `effect mapping`, `input binding`, `exec
 
 Required `UNMAPPED_EFFECT` is effect mapping at the first call/launch needing absent authority or mapping. Only a direct captured effect is optional; absence fails runtime there. Caller argument failure is input binding. `CONTEXT_ISOLATION_UNAVAILABLE` is execution admission.
 
+Source budget diagnostics are module phase with empty Trace, in file-by-source-order → graph → line priority. Details are `source characters <A> exceeds maximum 16000`, `source graph characters <A> exceeds maximum 128000`, and `source line characters <A> exceeds maximum 240`; `<A>` is canonical decimal. Locations are the source `:1:1`, `oi.mod:1:1`, and first overlong source line column 241 respectively.
+
 Pre-entry isolation=`CONTEXT_ISOLATION_UNAVAILABLE|execution admission|main token location|sealed context unavailable|[]`; after static, binding count=`INPUT_BINDING_MISMATCH|input binding|entry function-name location|expected E bindings; found A|[]`, E/A nats. Both yield that Failure in a Failed receipt, policy/reply absent, operations empty, target main/effects=0; TaskID/entry ActivationID=`root`/`root/a0`; other fields loaded; probes none.
 
 Runtime includes contract/semantic ambiguity, `NONDETERMINISTIC_DERIVATION`, `DUPLICATE_KEY`, `MISSING_KEY`, task depth/owner/cancellation, deadlock, indeterminate effect, operation/effect failures, and nonempty `stop` category. Other categories retain their producing rule's phase.

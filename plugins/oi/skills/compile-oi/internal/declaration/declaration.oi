@@ -1,0 +1,262 @@
+package declaration
+
+import "std/diagnostic"
+import "std/fs"
+import "oi/skills/compile-oi/internal/diagnose"
+import "oi/skills/compile-oi/internal/load"
+import "oi/skills/compile-oi/internal/model"
+
+type DeclarationSelection struct {
+    Found bool
+    SourceIndex int
+    Declaration model.Declaration
+}
+
+func Validate(graph load.Graph) []diagnostic.Diagnostic {
+    var result []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
+    var seen []text = []text{}
+    for source in graph.Sources {
+        for value in source.Declarations {
+            var key text = DeclarationKey(source.Package, value.Name)
+            if diagnose.ContainsText(seen, key) {
+                result = append(result, diagnostic.New(
+                    "DUPLICATE_DECLARATION", "type", value.Location, value.Name))
+            } else {
+                seen = append(seen, key)
+            }
+        }
+    }
+    for source in graph.Sources {
+        for reference in source.TypeReferences {
+            var targetPackage text = ReferencePackage(source, reference.Name)
+            var targetName text = ReferenceName(reference.Name)
+            if !IsBuiltinType(reference.Name) &&
+                !HasType(graph.Sources, targetPackage, targetName) {
+                result = append(result, diagnostic.New(
+                    "UNKNOWN_TYPE", "type", reference.Location, reference.Name))
+            } else if targetPackage != source.Package &&
+                !HasExportedType(graph.Sources, targetPackage, targetName) {
+                result = append(result, diagnostic.New(
+                    "UNEXPORTED_NAME", "type", reference.Location, reference.Name))
+            }
+        }
+        for call in source.Calls {
+            var intrinsic bool = false
+            for use in source.TaskIntrinsicUses {
+                if use.CallID == call.ID {
+                    intrinsic = true
+                }
+            }
+            if !intrinsic {
+                result = diagnose.Append(result, ValidateCall(graph.Sources, source, call))
+            }
+        }
+    }
+    result = diagnose.Append(result, ValidateEntries(graph))
+    return diagnose.Order(result)
+}
+
+func ValidateCall(
+    sources []model.SourceFile,
+    source model.SourceFile,
+    call model.CallSite,
+) []diagnostic.Diagnostic {
+    var result []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
+    var packageName text = CallPackage(source, call.Target)
+    var name text = CallName(call.Target)
+    var selected DeclarationSelection = FindDeclaration(sources, packageName, name)
+    var asynchronous bool = false
+    for transform in call.ResultTransforms {
+        if transform.Kind == model.ResultTransformKind.WrapTask {
+            asynchronous = true
+        }
+    }
+    if asynchronous && selected.Found &&
+        selected.Declaration.Kind != model.DeclarationKind.Function {
+        return result
+    }
+    if name == "main" {
+        return []diagnostic.Diagnostic{
+            diagnostic.New("ENTRY_NOT_CALLABLE", "type", call.Location, call.Target),
+        }
+    }
+    if !selected.Found {
+        if !HasCallable(sources, packageName, name) {
+            return []diagnostic.Diagnostic{
+                diagnostic.New("UNKNOWN_NAME", "type", call.Location, call.Target),
+            }
+        }
+        if packageName != source.Package && !HasExportedCallable(sources, packageName, name) {
+            return []diagnostic.Diagnostic{
+                diagnostic.New("UNEXPORTED_NAME", "type", call.Location, call.Target),
+            }
+        }
+        return result
+    }
+    if !IsCallable(selected.Declaration) {
+        return []diagnostic.Diagnostic{
+            diagnostic.New("UNKNOWN_NAME", "type", call.Location, call.Target),
+        }
+    }
+    if packageName != source.Package && !selected.Declaration.Exported {
+        return []diagnostic.Diagnostic{
+            diagnostic.New("UNEXPORTED_NAME", "type", call.Location, call.Target),
+        }
+    }
+    if len(call.Arguments) != len(selected.Declaration.Parameters) {
+        result = append(result, diagnostic.New(
+            "ARGUMENT_ARITY_MISMATCH", "type", call.Location, call.Target))
+    }
+    if call.ResultUsed && !selected.Declaration.HasResult {
+        result = append(result, diagnostic.New(
+            "RESULT_ARITY_MISMATCH", "type", call.Location, call.Target))
+    }
+    return result
+}
+
+func ValidateEntries(graph load.Graph) []diagnostic.Diagnostic {
+    var result []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
+    var entries []model.Entry = []model.Entry{}
+    for source in graph.Sources {
+        if diagnose.ContainsPath(graph.RootPaths, source.Path) && source.Package == "main" {
+            for entry in source.Entries {
+                entries = append(entries, entry)
+            }
+        }
+    }
+    if len(entries) == 0 {
+        result = append(result, diagnostic.New(
+            "MISSING_ENTRY", "type", RootLocation(graph), "lowercase main"))
+    }
+    var index int = 0
+    for entry in entries {
+        if index != 0 {
+            result = append(result, diagnostic.New(
+                "DUPLICATE_ENTRY", "type", entry.Location, "lowercase main"))
+        }
+        if entry.ResultSource != none {
+            result = append(result, diagnostic.New(
+                "ENTRY_RESULT_FORBIDDEN", "type", entry.Location, "main result"))
+        }
+        for location in entry.ValueReturnLocations {
+            result = append(result, diagnostic.New(
+                "ENTRY_RETURN_VALUE", "type", location, "main value return"))
+        }
+        index = index + 1
+    }
+    return result
+}
+
+func Reachable(graph load.Graph) []text {
+    return derive [the unique call-graph closure in {graph.Sources} from lowercase main entries in
+        {graph.RootPaths}, including only uniquely resolved visible ordinary functions and declared
+        callable declarations, with roots and newly reached keys retained in source encounter order]
+}
+
+func ReachableFrom(sources []model.SourceFile, roots []text) []text {
+    return derive [the unique call-graph closure in {sources} from {roots}, retaining roots and newly
+        reached uniquely resolved visible callable declaration keys in source encounter order]
+}
+
+func FindDeclaration(
+    sources []model.SourceFile,
+    packageName text,
+    name text,
+) DeclarationSelection {
+    return derive [the unique declaration named {name} in package {packageName} across {sources};
+        include its zero-based source index and complete value only when exactly one exists, otherwise
+        return Found false, index zero, and EmptyDeclaration]
+}
+
+func FindTypeDeclaration(
+    sources []model.SourceFile,
+    packageName text,
+    name text,
+) DeclarationSelection {
+    return derive [the unique type declaration named {name} in package {packageName} across {sources};
+        include its zero-based source index and complete value only when exactly one exists, otherwise
+        return Found false, index zero, and EmptyDeclaration]
+}
+
+func HasType(sources []model.SourceFile, packageName text, name text) bool {
+    return [whether {sources} contain a type declaration named {name} in package {packageName}]
+}
+
+func HasExportedType(sources []model.SourceFile, packageName text, name text) bool {
+    return [whether {sources} contain an exported type declaration named {name} in package
+        {packageName}]
+}
+
+func IsCallable(value model.Declaration) bool {
+    return value.Kind == model.DeclarationKind.Function ||
+        value.Kind == model.DeclarationKind.Effect
+}
+
+func HasCallable(sources []model.SourceFile, packageName text, name text) bool {
+    return [whether {sources} contain any callable declaration named {name} in package {packageName}]
+}
+
+func HasExportedCallable(sources []model.SourceFile, packageName text, name text) bool {
+    return [whether {sources} contain any exported callable declaration named {name} in package
+        {packageName}]
+}
+
+func DeclarationKey(packageName text, name text) text {
+    return [the unambiguous declaration key for package {packageName} and name {name}]
+}
+
+func ReferencePackage(source model.SourceFile, name text) text {
+    return [the package selected by raw type reference {name} and {source.Imports}, defaulting to
+        {source.Package}]
+}
+
+func ReferenceName(name text) text {
+    return [the unqualified identifier in raw type reference {name}]
+}
+
+func QualifiedTypeName(source model.SourceFile, name text) text {
+    return DeclarationKey(ReferencePackage(source, name), ReferenceName(name))
+}
+
+func CallPackage(source model.SourceFile, target text) text {
+    return [the package selected by raw call target {target} and {source.Imports}, defaulting to
+        {source.Package}]
+}
+
+func CallName(target text) text {
+    return [the unqualified identifier in raw call target {target}]
+}
+
+func IsBuiltinType(name text) bool {
+    return [whether {name} is a complete loaded-snapshot core built-in type reference]
+}
+
+func EmptyDeclaration() model.Declaration {
+    var origin model.TypeNodeOrigin = model.TypeNodeOrigin{
+        Token: "",
+        Position: model.SourcePosition{
+            Path: "", Line: 0, Column: 0, Location: "", SourceOrder: 0,
+        },
+    }
+    var shape model.TypeShape = model.TypeShape{
+        Kind: model.TypeShapeKind.Builtin, Name: "", NodePath: []int{},
+        Labels: []text{}, Elements: []model.TypeShape{}, ContractSource: "", Origin: origin,
+    }
+    return model.Declaration{
+        Name: "", Kind: model.DeclarationKind.Const, Exported: false, Location: "",
+        Parameters: []model.Parameter{}, ResultSource: none, Result: shape,
+        HasResult: false, TypeSource: none, Underlying: shape,
+        HasUnderlying: false,
+    }
+}
+
+func Location(path fs.Path) text {
+    return [the normalized module-relative {path} location at line 1 column 1]
+}
+
+func RootLocation(graph load.Graph) text {
+    if len(graph.RootPaths) == 0 {
+        return "main.oi:1:1"
+    }
+    return Location(graph.RootPaths[0])
+}

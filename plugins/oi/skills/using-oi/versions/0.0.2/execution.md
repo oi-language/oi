@@ -6,8 +6,8 @@ Identity is exactly `Oi 0.0.2`. This file is the sole base-language authority an
 
 1. From target directory/file parent, logical-read nearest `oi.mod` once; retain content/identity and parse only canonical `module`/exact `oi`. This is pre-recognition bootstrap.
 2. Logical-read selected `execution.md` once; recognize snapshot only after exact identity validates, then fully validate held module bytes. Never reread. Earlier version/spec failure is bootstrap-only.
-3. Logical read is contiguous nonoverlapping bytes zero→true EOF, closed with byte size, decoded characters, SHA-256. Invalid UTF-8, truncation, gap/overlap/rewind/repetition, missing EOF, or drift stops.
-4. `snapshot-metadata`, `version-discovery`, and `manifest-inspection` may stop. Otherwise load run-mode rows; validate module/load manifested sources; parse/type; union node/call/import triggers; close dependencies; load remaining rows/std by UTF-8 path bytes, each once. Physical/receipt orders differ.
+3. Logical read: contiguous nonoverlapping bytes zero→true EOF; close byte size, characters, SHA-256. Invalid UTF-8/coverage/EOF/drift stops.
+4. `snapshot-metadata`/`version-discovery`/`manifest-inspection` may stop. Else load run-mode rows; validate manifested sources; parse/type; union triggers; close dependencies; load remaining rows/std by path bytes once. Physical/receipt orders differ.
 
 Missing base/runtime: `MISSING_SPEC_SHARD`/`MISSING_RUNTIME_SHARD`; bad identity/cycle/row/contradiction: `INVALID_SPEC_SNAPSHOT`; unsupported: `UNSUPPORTED_VERSION`. Never default/combine/reinterpret.
 
@@ -48,7 +48,7 @@ terminator=";"|inserted_line_terminator; separator=","|terminator;
 binary_op="*"|"/"|"%"|"+"|"-"|"=="|"!="|"<"|"<="|">"|">="|"~="|"&&"|"||";
 ```
 
-Identifiers case-sensitive; `_` discards; uppercase exports. Unescaped semantic `[` is `NESTED_SEMANTIC_EXPRESSION`. Complete-token line end/EOF inserts terminator except within delimiters or after comma/operator; `;` equivalent.
+Identifiers case-sensitive; `_` discards; uppercase exports. Unescaped semantic `[`→`NESTED_SEMANTIC_EXPRESSION`. Complete-token EOL/EOF inserts terminator except in delimiters or after comma/operator; `;` equivalent.
 
 Keywords=`package import const type struct enum func effect uses contract var if else switch case default for in select return break continue stop handoff oi await detach derive text bool int unit task outcome channel sender receiver map set failure true false none`; builtins=`len append has put add remove capture send receive`.
 
@@ -76,13 +76,13 @@ Block="{",{Statement,terminator},"}";
 
 0.0.2 `oi.mod`=`module <path>`, exact `oi 0.0.2`, one+ `source <path>`; blank/comment lines ignored. Module segment=nonempty ASCII alnum/`_`/`-`/`.`, no edge/repeated dot. Sources=unique, strict byte-ascending normalized relative UTF-8; forbid backslash, `.`, `..`, empty/edge, absolute/escape. Missing/invalid/unordered: `MISSING_SOURCE_MANIFEST`/`SOURCE_MANIFEST_PATH`/`SOURCE_MANIFEST_ORDER`. Failure Location=`oi.mod:1:1`; missing Detail=`source manifest required`.
 
-`main.oi` package=`main`; elsewhere directory-final=basename=package; one source/directory (`SOURCE_PACKAGE_MISMATCH`/`SOURCE_PACKAGE_DUPLICATE`). Imports resolve uniquely or `SOURCE_IMPORT_UNDECLARED`; unlisted files absent. Reachable graph is acyclic/version-uniform. File/graph/line overflow: `SOURCE_FILE_BUDGET`/`SOURCE_GRAPH_BUDGET`/`SOURCE_LINE_BUDGET`; bad close/drift: `SOURCE_TRUNCATED`/`SOURCE_CHANGED_DURING_LOAD`.
+`main.oi` package=`main`; elsewhere directory-final=basename=package; one source/directory: `SOURCE_PACKAGE_MISMATCH`/`SOURCE_PACKAGE_DUPLICATE`. Imports unique or `SOURCE_IMPORT_UNDECLARED`; unlisted absent; graph acyclic/version-uniform. Budgets choose file(source order)→graph→line; phase=`module`, Trace=`[]`: `SOURCE_FILE_BUDGET|<path>:1:1|source characters <A> exceeds maximum 16000`; `SOURCE_GRAPH_BUDGET|oi.mod:1:1|source graph characters <A> exceeds maximum 128000`; `SOURCE_LINE_BUDGET|<path>:<line>:241|source line characters <A> exceeds maximum 240`; `<A>` canonical decimal. Bad close/drift: `SOURCE_TRUNCATED`/`SOURCE_CHANGED_DURING_LOAD`.
 
 `text` exact UTF-8; `bool=true|false`; `int` unbounded; `unit` singleton; `[]T` finite ordered; `map[K]V`/`set[T]` finite; `T?=none|T`. Struct fields exact; enums use `Type.Member`. Declared types distinct; explicit construction converts equal underlying shape+contract. `[]` binds before `?`.
 
-Nonhandles—primitive, enum, named, optional, struct, slice, map, set, failure, outcome—copy recursive alias-free snapshots on assignment, parameter/result/effect crossing, composite insertion, collection operation; handles retain identity/affinity.
+Nonhandles (all except task/channel/sender/receiver) copy recursive alias-free snapshots on assignment, crossings, insertion, and collection operations; handles retain identity/affinity.
 
-Stable map key/set element: bool (`false<true`), mathematical int, text by unsigned UTF-8 bytes, enum by declaration, named-over-one retaining identity/order; others unstable. Maps/sets: finite, empty-zero, immutable, noncomparable, recursively durable, no shared mutable state. Other zeroes=`""`/`false`/`0`/`unit`, empty slice, `none`, first enum, fieldwise struct; handles none.
+Stable key/element: bool (`false<true`), int, text UTF-8 bytes, enum declaration order, named-over-one retaining identity/order; others unstable. Maps/sets finite, empty-zero, immutable, noncomparable, recursively durable, unshared. Other zeroes=`""`/`false`/`0`/`unit`, empty slice, `none`, first enum, fieldwise struct; handles none.
 
 `append`→new same-type slice; `len`→element count/text bytes; `has`→membership. Value-returning `put` inserts/replaces; `add` includes; `remove` excludes/unchanged. Slice/map indexing typed; bounds fail runtime; absent key=`MISSING_KEY`. Int division toward zero. Recursively comparable=bool/int/text/unit, enum, named/optional/struct; not collection/handle/failure. Operators require identical types; bool ops short-circuit.
 

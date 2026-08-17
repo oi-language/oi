@@ -1,0 +1,66 @@
+package diagnose
+
+import "std/diagnostic"
+import "std/fs"
+import "oi/skills/compile-oi/internal/model"
+
+func Order(values []diagnostic.Diagnostic) []diagnostic.Diagnostic {
+    return derive [the unique stable ordering of {values} by the loaded snapshot diagnostic choice:
+        phase order, normalized Location path unsigned UTF-8 bytes, one-based line, one-based column,
+        then Category unsigned UTF-8 bytes; retain equal records and their input order]
+}
+
+func Local(sources []model.SourceFile, phase text) []diagnostic.Diagnostic {
+    var result []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
+    for source in sources {
+        for fact in source.StaticFacts {
+            if fact.Phase == phase {
+                result = append(result,
+                    diagnostic.New(fact.Category, fact.Phase, fact.Location, fact.Detail))
+            }
+        }
+    }
+    return Order(result)
+}
+
+func Append(
+    values []diagnostic.Diagnostic,
+    more []diagnostic.Diagnostic,
+) []diagnostic.Diagnostic {
+    var result []diagnostic.Diagnostic = values
+    for item in more {
+        result = append(result, item)
+    }
+    return result
+}
+
+func ContainsText(values []text, wanted text) bool {
+    for value in values {
+        if value == wanted {
+            return true
+        }
+    }
+    return false
+}
+
+func ContainsPath(values []fs.Path, wanted fs.Path) bool {
+    for value in values {
+        if value == wanted {
+            return true
+        }
+    }
+    return false
+}
+
+func SourcePositionBefore(left model.SourcePosition, right model.SourcePosition) bool {
+    if left.Path != right.Path {
+        return left.Path < right.Path
+    }
+    if left.Line != right.Line {
+        return left.Line < right.Line
+    }
+    if left.Column != right.Column {
+        return left.Column < right.Column
+    }
+    return left.SourceOrder < right.SourceOrder
+}

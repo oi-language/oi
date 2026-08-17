@@ -12,7 +12,7 @@ func Function(program model.Program, id int) model.Function {
             return item
         }
     }
-    return [the unique function with ID {id} in validated {program}]
+    return derive [the unique function with ID {id} in validated {program}]
 }
 
 func Instruction(function model.Function, id int) model.Instruction {
@@ -21,7 +21,7 @@ func Instruction(function model.Function, id int) model.Instruction {
             return item
         }
     }
-    return [the unique instruction with ID {id} in validated {function}]
+    return derive [the unique instruction with ID {id} in validated {function}]
 }
 
 func FirstInstruction(function model.Function) int {
@@ -75,7 +75,7 @@ func Transcript(values []model.LegacyEffectResult, used []text, id text) model.L
 }
 
 func PresentEffect(value model.LegacyEffectResult?) model.LegacyEffectResult {
-    return [the exact present model.LegacyEffectResult in {value}]
+    return derive [the exact present model.LegacyEffectResult in {value}]
 }
 
 func PresentEffectValue(value model.LegacyEffectValue?) model.LegacyEffectValue {
@@ -83,7 +83,7 @@ func PresentEffectValue(value model.LegacyEffectValue?) model.LegacyEffectValue 
 }
 
 func PresentDiagnostic(value diagnostic.Diagnostic?) diagnostic.Diagnostic {
-    return [the exact present diagnostic.Diagnostic in {value}]
+    return derive [the exact present diagnostic.Diagnostic in {value}]
 }
 
 func Frame(item diagnostic.Diagnostic, prefix text, location text) diagnostic.Diagnostic {
@@ -147,19 +147,19 @@ func ChannelIndex(machine legacy_model.Machine, id text) int {
 }
 
 func PresentBind(value model.BindStep?) model.BindStep { return [the exact present BindStep in {value}] }
-func PresentStore(value model.StoreStep?) model.StoreStep { return [the exact present StoreStep in {value}] }
-func PresentCompute(value model.ComputeStep?) model.ComputeStep { return [the exact present ComputeStep in {value}] }
+func PresentStore(value model.StoreStep?) model.StoreStep { return derive [the exact present StoreStep in {value}] }
+func PresentCompute(value model.ComputeStep?) model.ComputeStep { return derive [the exact present ComputeStep in {value}] }
 func PresentBranch(value model.BranchStep?) model.BranchStep { return [the exact present BranchStep in {value}] }
 func PresentJump(value model.JumpStep?) model.JumpStep { return [the exact present JumpStep in {value}] }
-func PresentCall(value model.CallStep?) model.CallStep { return [the exact present CallStep in {value}] }
-func PresentEffectStep(value model.EffectStep?) model.EffectStep { return [the exact present EffectStep in {value}] }
-func PresentLaunch(value model.LaunchStep?) model.LaunchStep { return [the exact present LaunchStep in {value}] }
+func PresentCall(value model.CallStep?) model.CallStep { return derive [the exact present CallStep in {value}] }
+func PresentEffectStep(value model.EffectStep?) model.EffectStep { return derive [the exact present EffectStep in {value}] }
+func PresentLaunch(value model.LaunchStep?) model.LaunchStep { return derive [the exact present LaunchStep in {value}] }
 func PresentAwait(value model.AwaitStep?) model.AwaitStep { return [the exact present AwaitStep in {value}] }
-func PresentJoin(value model.JoinStep?) model.JoinStep { return [the exact present JoinStep in {value}] }
+func PresentJoin(value model.JoinStep?) model.JoinStep { return derive [the exact present JoinStep in {value}] }
 func PresentChannel(value model.ChannelStep?) model.ChannelStep { return [the exact present ChannelStep in {value}] }
 func PresentSend(value model.SendStep?) model.SendStep { return [the exact present SendStep in {value}] }
 func PresentReceive(value model.ReceiveStep?) model.ReceiveStep { return [the exact present ReceiveStep in {value}] }
-func PresentSelect(value model.SelectStep?) model.SelectStep { return [the exact present SelectStep in {value}] }
+func PresentSelect(value model.SelectStep?) model.SelectStep { return derive [the exact present SelectStep in {value}] }
 func PresentReturn(value model.ReturnStep?) model.ReturnStep { return [the exact present ReturnStep in {value}] }
 func PresentStop(value model.StopStep?) model.StopStep { return [the exact present StopStep in {value}] }
 func PresentInt(value int?) int { return [the exact present int in {value}] }

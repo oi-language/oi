@@ -21,7 +21,7 @@ func Type(program model.Program, typeID int) model.TypeRef {
             return item
         }
     }
-    return [the unique validated TypeRef for {typeID}]
+    return derive [the unique validated TypeRef for {typeID}]
 }
 
 func Cross(program model.Program, machine legacy_model.Machine, slots []legacy_model.SlotValue,

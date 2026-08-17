@@ -127,7 +127,7 @@ func PresentValue(value execution.TypedValue?) execution.TypedValue {
 }
 
 func PresentFailure(value diagnostic.Diagnostic?) diagnostic.Diagnostic {
-    return [the exact present diagnostic.Diagnostic in {value}]
+    return derive [the exact present diagnostic.Diagnostic in {value}]
 }
 
 func IsolationFailureValid(target model.TargetIdentity, receipt execution.ExecutionReceipt) bool {

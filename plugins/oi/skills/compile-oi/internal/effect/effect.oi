@@ -1,0 +1,105 @@
+package effect
+
+import "std/diagnostic"
+import "oi/skills/compile-oi/internal/declaration"
+import "oi/skills/compile-oi/internal/diagnose"
+import "oi/skills/compile-oi/internal/load"
+import "oi/skills/compile-oi/internal/model"
+
+type Requirement struct {
+    Caller text
+    CallID text
+    Authority text
+    Optional bool
+    Position model.SourcePosition
+}
+
+type AuthorityContext struct {
+    Caller text
+    Available []text
+}
+
+type ViolationKey struct {
+    CallID text
+    Authority text
+}
+
+func Validate(
+    graph load.Graph,
+    reachable []text,
+    available []text,
+) []diagnostic.Diagnostic {
+    var requirements []Requirement = Requirements(graph.Sources, reachable)
+    var contexts []AuthorityContext = Contexts(graph, available)
+    var seen []ViolationKey = []ViolationKey{}
+    var result []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
+    for context in contexts {
+        for requirement in requirements {
+            if context.Caller == requirement.Caller && !requirement.Optional &&
+                !diagnose.ContainsText(context.Available, requirement.Authority) {
+                var key ViolationKey = ViolationKey{
+                    CallID: requirement.CallID, Authority: requirement.Authority,
+                }
+                if !ContainsViolation(seen, key) {
+                    seen = append(seen, key)
+                    result = append(result, diagnostic.New(
+                        "UNMAPPED_EFFECT", "effect mapping",
+                        requirement.Position.Location, requirement.Authority))
+                }
+            }
+        }
+    }
+    return diagnose.Order(result)
+}
+
+func Requirements(
+    sources []model.SourceFile,
+    reachable []text,
+) []Requirement {
+    return derive [the unique ordered authority requirements from {sources} for calls whose caller
+        declaration key is in {reachable}; resolve each visible callable declaration, emit one item
+        for every matching AuthorityUse, mark only an OptionalBoundary.DirectCapture whose caller and
+        operand CallID exactly match as Optional, remove duplicate CallID and Authority pairs, and
+        order by call SourcePosition then Authority unsigned UTF-8 bytes]
+}
+
+func Contexts(graph load.Graph, available []text) []AuthorityContext {
+    return derive [from {graph}, seed every root lowercase main with distinct {available}; close
+        visible ordinary calls over identical availability; for each call carrying the asynchronous
+        result transform, intersect parent availability with distinct reachable demand of its target;
+        return unique Caller and authority-set pairs in discovery order]
+}
+
+func Authorities(sources []model.SourceFile, reachable []text) []text {
+    return derive [the unique first-encounter distinct Authority list from Requirements over {sources}
+        and {reachable}]
+}
+
+func ChildAuthorities(
+    sources []model.SourceFile,
+    source model.SourceFile,
+    call model.CallSite,
+    parent []text,
+) []text {
+    return derive [the unique intersection, in reachable-demand order, of {parent} and authority
+        demand reachable from the uniquely resolved target of {call} in {source} and {sources}]
+}
+
+func DirectCaptured(source model.SourceFile, call model.CallSite) bool {
+    for boundary in source.OptionalBoundaries {
+        if boundary.Kind == model.OptionalBoundaryKind.DirectCapture &&
+            boundary.Caller == call.Caller && boundary.OperandCallID == call.ID {
+            return true
+        }
+    }
+    return false
+}
+
+func ContainsViolation(values []ViolationKey, wanted ViolationKey) bool {
+    for value in values {
+        if value.CallID == wanted.CallID && value.Authority == wanted.Authority {
+            return true
+        }
+    }
+    return false
+}

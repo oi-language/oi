@@ -72,7 +72,7 @@ func CopySender(machine legacy_model.Machine, value legacy_model.Value) legacy_m
                 SourceSlots: []legacy_model.SlotValue{}}
         }
     }
-    return [the unique committed sender copy crossing for validated sender value {value}]
+    return derive [the unique committed sender copy crossing for validated sender value {value}]
 }
 
 func ReceiverHolder(owner text, slotID int) text {
@@ -86,7 +86,7 @@ func MoveReceiver(machine legacy_model.Machine, value legacy_model.Value, holder
             return machine
         }
     }
-    return [the unique receiver holder move for validated receiver value {value}]
+    return derive [the unique receiver holder move for validated receiver value {value}]
 }
 
 func NextMessageID(machine legacy_model.Machine, channelID text) text {

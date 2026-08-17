@@ -1,321 +1,349 @@
 package typecheck
 
+import "std/diagnostic"
+import "std/fs"
+import "oi/skills/compile-oi/internal/declaration"
+import "oi/skills/compile-oi/internal/diagnose"
 import "oi/skills/compile-oi/internal/model"
 
+type ResolvedType struct {
+    Found bool; SourceIndex int; Shape model.TypeShape
+}
+
+type TransformResult struct {
+    Shape model.TypeShape; Valid bool; Diagnostics []diagnostic.Diagnostic
+}
+
+type HandleSelection struct {
+    Found bool; Origin model.TypeNodeOrigin
+}
+
 type CollectionSelection struct {
-    Found bool
-    Kind model.TypeShapeKind
-    Surface model.TypeShape
-    Key model.TypeShape
-    Value model.TypeShape
+    Found bool; Kind model.TypeShapeKind; Surface model.TypeShape
+    Key model.TypeShape; Value model.TypeShape
 }
 
-type BuiltinSignature struct {
-    Found bool
-    Arguments []model.TypeShape
-    Result model.TypeShape
-}
-
-func CanonicalOrder(
-    sources []model.SourceFile,
-    source model.SourceFile,
-    shape model.TypeShape,
-) model.CanonicalOrderIdentity {
-    return CanonicalOrderFrom(sources, source, shape, []text{})
-}
-
-func CanonicalOrderFrom(
-    sources []model.SourceFile,
-    source model.SourceFile,
-    shape model.TypeShape,
-    visited []text,
-) model.CanonicalOrderIdentity {
-    if shape.Kind == model.TypeShapeKind.Builtin {
-        if shape.Name == "bool" {
-            return StableOrder(model.CanonicalOrderKind.Bool, "bool")
+func Validate(sources []model.SourceFile) []diagnostic.Diagnostic {
+    var result []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
+    for source in sources {
+        for judgment in source.Judgments {
+            if judgment.HasTarget && TargetResolvable(sources, source, judgment.Target) &&
+                !BoundedSemanticResult(sources, source, judgment.Target) {
+                result = append(result, diagnostic.New("UNBOUNDED_SEMANTIC_RESULT", "type",
+                    judgment.Position.Location, judgment.TargetSource))
+            }
         }
-        if shape.Name == "int" {
-            return StableOrder(model.CanonicalOrderKind.Int, "int")
-        }
-        if shape.Name == "text" {
-            return StableOrder(model.CanonicalOrderKind.Text, "text")
-        }
-        return UnstableOrder()
-    }
-    if shape.Kind == model.TypeShapeKind.Enum {
-        return StableOrder(model.CanonicalOrderKind.Enum, QualifiedTypeName(source, shape.Name))
-    }
-    if shape.Kind != model.TypeShapeKind.Named {
-        return UnstableOrder()
-    }
-    var identity text = QualifiedTypeName(source, shape.Name)
-    if ContainsText(visited, identity) {
-        return UnstableOrder()
-    }
-    for candidate in sources {
-        for declaration in candidate.Declarations {
-            if declaration.Kind == model.DeclarationKind.Type &&
-                DeclarationKey(candidate.Package, declaration.Name) == identity &&
-                declaration.HasUnderlying {
-                var order model.CanonicalOrderIdentity = CanonicalOrderFrom(
-                    sources,
-                    candidate,
-                    declaration.Underlying,
-                    append(visited, identity),
-                )
-                if order.Stable {
-                    order.TypeIdentity = identity
+        for derivation in source.Derivations {
+            if !derivation.HasTarget {
+                result = append(result, diagnostic.New("DERIVATION_TARGET_REQUIRED", "type",
+                    derivation.Position.Location, "derive"))
+            } else if TargetResolvable(sources, source, derivation.Target) {
+                var handle HandleSelection = FirstRuntimeHandle(
+                    Underlying(sources, source, derivation.Target))
+                if handle.Found {
+                    result = append(result, diagnostic.New("DERIVATION_HANDLE_FORBIDDEN", "type",
+                        handle.Origin.Position.Location, handle.Origin.Token))
                 }
-                return order
+                for dependency in derivation.Dependencies {
+                    result = append(result, diagnostic.New(DerivationCategory(dependency.Kind),
+                        "type", dependency.Position.Location, dependency.Detail))
+                }
+            }
+        }
+        for use in source.CollectionTypes {
+            if !StableCollectionMember(sources, source, use.Member) {
+                var category text = "UNSTABLE_MAP_KEY"
+                if use.Kind == model.TypeShapeKind.Set {
+                    category = "UNSTABLE_SET_ELEMENT"
+                }
+                result = append(result, diagnostic.New(category, "type", use.Position.Location,
+                    use.MemberTypeSource))
+            }
+        }
+        for call in source.CollectionCalls {
+            var category text = CollectionCallFailure(sources, source, call)
+            if category != "" {
+                result = append(result, diagnostic.New(category, "type", call.Location,
+                    declaration.CallName(call.Target)))
+            }
+        }
+        for use in source.CollectionIndexes {
+            var category text = CollectionIndexFailure(sources, source, use)
+            if category != "" {
+                result = append(result, diagnostic.New(category, "type",
+                    CollectionIndexLocation(sources, source, use),
+                    CollectionIndexDetail(sources, source, use)))
+            }
+        }
+        for use in source.CollectionIterations {
+            var category text = CollectionIterationFailure(sources, source, use)
+            if category != "" {
+                result = append(result, diagnostic.New(category, "type",
+                    CollectionIterationLocation(sources, source, use),
+                    CollectionIterationDetail(sources, source, use)))
+            }
+        }
+        for conversion in source.Conversions {
+            var actual ResolvedType = ResolveConversionSource(sources, source, conversion)
+            if actual.Found && !SameType(
+                sources[actual.SourceIndex], actual.Shape, source, conversion.Target) {
+                if SameUnderlying(
+                    sources, sources[actual.SourceIndex], actual.Shape, source, conversion.Target) {
+                    if !conversion.Explicit {
+                        result = append(result, diagnostic.New("IMPLICIT_NAMED_CONVERSION", "type",
+                            conversion.Location, conversion.TargetType))
+                    }
+                } else {
+                    result = append(result, diagnostic.New("INVALID_CONVERSION", "type",
+                        conversion.Location, conversion.TargetType))
+                }
+            }
+        }
+        for call in source.Calls {
+            var intrinsic bool = false
+            for use in source.TaskIntrinsicUses {
+                if use.CallID == call.ID {
+                    intrinsic = true
+                }
+            }
+            if !intrinsic {
+                result = diagnose.Append(result, ValidateCallTypes(sources, source, call))
             }
         }
     }
-    return UnstableOrder()
+    return diagnose.Order(result)
 }
 
-func SelectCollection(
-    surface model.TypeShape,
-    outer model.TypeShape,
-) CollectionSelection {
-    if outer.Kind == model.TypeShapeKind.Slice && len(outer.Elements) == 1 {
-        return CollectionSelection{
-            Found: true,
-            Kind: outer.Kind,
-            Surface: surface,
-            Key: BuiltinType("int"),
-            Value: outer.Elements[0],
+func ValidateCallTypes(sources []model.SourceFile, source model.SourceFile, call model.CallSite) []diagnostic.Diagnostic {
+    var result []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
+    var packageName text = declaration.CallPackage(source, call.Target)
+    var name text = declaration.CallName(call.Target)
+    var selected declaration.DeclarationSelection = declaration.FindDeclaration(sources, packageName, name)
+    var asynchronous bool = false
+    for transform in call.ResultTransforms {
+        if transform.Kind == model.ResultTransformKind.WrapTask {
+            asynchronous = true
         }
     }
-    if outer.Kind == model.TypeShapeKind.Map && len(outer.Elements) == 2 {
-        return CollectionSelection{
-            Found: true,
-            Kind: outer.Kind,
-            Surface: surface,
-            Key: outer.Elements[0],
-            Value: outer.Elements[1],
-        }
+    if name == "main" || !selected.Found || !declaration.IsCallable(selected.Declaration) ||
+        (packageName != source.Package && !selected.Declaration.Exported) ||
+        (asynchronous && selected.Declaration.Kind != model.DeclarationKind.Function) {
+        return result
     }
-    if outer.Kind == model.TypeShapeKind.Set && len(outer.Elements) == 1 {
-        return CollectionSelection{
-            Found: true,
-            Kind: outer.Kind,
-            Surface: surface,
-            Key: outer.Elements[0],
-            Value: outer.Elements[0],
-        }
-    }
-    return EmptyCollectionSelection()
-}
-
-func Signature(name text, collection CollectionSelection) BuiltinSignature {
-    if !collection.Found {
-        return EmptyBuiltinSignature()
-    }
-    if name == "len" {
-        return SignatureValue([]model.TypeShape{collection.Surface}, BuiltinType("int"))
-    }
-    if name == "has" && (collection.Kind == model.TypeShapeKind.Map ||
-        collection.Kind == model.TypeShapeKind.Set) {
-        return SignatureValue(
-            []model.TypeShape{collection.Surface, collection.Key},
-            BuiltinType("bool"),
-        )
-    }
-    if name == "put" && collection.Kind == model.TypeShapeKind.Map {
-        return SignatureValue(
-            []model.TypeShape{collection.Surface, collection.Key, collection.Value},
-            collection.Surface,
-        )
-    }
-    if name == "add" && collection.Kind == model.TypeShapeKind.Set {
-        return SignatureValue(
-            []model.TypeShape{collection.Surface, collection.Value},
-            collection.Surface,
-        )
-    }
-    if name == "remove" && (collection.Kind == model.TypeShapeKind.Map ||
-        collection.Kind == model.TypeShapeKind.Set) {
-        return SignatureValue(
-            []model.TypeShape{collection.Surface, collection.Key},
-            collection.Surface,
-        )
-    }
-    return EmptyBuiltinSignature()
-}
-
-func ValidIterationArity(collection CollectionSelection, count int) bool {
-    if collection.Kind == model.TypeShapeKind.Slice {
-        return count == 1 || count == 2
-    }
-    if collection.Kind == model.TypeShapeKind.Map {
-        return count == 2
-    }
-    if collection.Kind == model.TypeShapeKind.Set {
-        return count == 1
-    }
-    return false
-}
-
-func IterationBindingTypes(
-    collection CollectionSelection,
-    count int,
-) []model.TypeShape {
-    if collection.Kind == model.TypeShapeKind.Slice && count == 1 {
-        return []model.TypeShape{collection.Value}
-    }
-    if collection.Kind == model.TypeShapeKind.Slice && count == 2 {
-        return []model.TypeShape{collection.Key, collection.Value}
-    }
-    if collection.Kind == model.TypeShapeKind.Map && count == 2 {
-        return []model.TypeShape{collection.Key, collection.Value}
-    }
-    if collection.Kind == model.TypeShapeKind.Set && count == 1 {
-        return []model.TypeShape{collection.Value}
-    }
-    return []model.TypeShape{}
-}
-
-func IterationArityDetail(collection CollectionSelection, count int) text {
-    return [for {collection.Kind} and exact binding count {count}, return one exact literal:
-        slice requires 1 or 2 bindings; found N, map requires 2 bindings; found N, or set requires 1 binding; found N,
-        replacing N only with the canonical decimal count]
-}
-
-func BoundedSemanticResult(
-    sources []model.SourceFile,
-    source model.SourceFile,
-    shape model.TypeShape,
-) bool {
-    return BoundedSemanticResultFrom(sources, source, shape, []text{})
-}
-
-func BoundedSemanticResultFrom(
-    sources []model.SourceFile,
-    source model.SourceFile,
-    shape model.TypeShape,
-    visited []text,
-) bool {
-    if shape.Kind == model.TypeShapeKind.Builtin {
-        return shape.Name == "bool" || shape.Name == "int" || shape.Name == "text" ||
-            shape.Name == "unit"
-    }
-    if shape.Kind == model.TypeShapeKind.Enum {
-        return true
-    }
-    if shape.Kind == model.TypeShapeKind.Optional && len(shape.Elements) == 1 {
-        return BoundedSemanticResultFrom(sources, source, shape.Elements[0], visited)
-    }
-    if shape.Kind == model.TypeShapeKind.Struct {
-        for field in shape.Elements {
-            if !BoundedSemanticResultFrom(sources, source, field, visited) {
-                return false
+    var targetSource model.SourceFile = sources[selected.SourceIndex]
+    if len(call.Arguments) == len(selected.Declaration.Parameters) {
+        var index int = 0
+        for argument in call.Arguments {
+            var actual ResolvedType = ResolveValue(sources, source, argument)
+            if actual.Found {
+                result = diagnose.Append(result, ValidateCompatibility(
+                    sources, sources[actual.SourceIndex], actual.Shape, targetSource,
+                    selected.Declaration.Parameters[index].Type, argument.Location))
             }
-        }
-        return true
-    }
-    if shape.Kind != model.TypeShapeKind.Named {
-        return false
-    }
-    var identity text = QualifiedTypeName(source, shape.Name)
-    if ContainsText(visited, identity) {
-        return false
-    }
-    for candidate in sources {
-        for declaration in candidate.Declarations {
-            if declaration.Kind == model.DeclarationKind.Type &&
-                DeclarationKey(candidate.Package, declaration.Name) == identity &&
-                declaration.HasUnderlying {
-                return BoundedSemanticResultFrom(
-                    sources,
-                    candidate,
-                    declaration.Underlying,
-                    append(visited, identity),
-                )
-            }
+            index = index + 1
         }
     }
-    return false
+    var transformed TransformResult = TransformCallResult(sources, targetSource, call, selected.Declaration)
+    for value in transformed.Diagnostics {
+        result = append(result, value)
+    }
+    if call.ResultUsed && selected.Declaration.HasResult && transformed.Valid &&
+        call.HasResultTarget {
+        result = diagnose.Append(result, ValidateCompatibility(
+            sources, targetSource, transformed.Shape, source, call.ResultTarget, call.Location))
+    } else if call.ResultUsed && selected.Declaration.HasResult && transformed.Valid &&
+        call.ResultTargetCallID != "" {
+        var target ResolvedType = ResolveProducer(sources, source, call.ResultTargetCallID)
+        if target.Found {
+            result = diagnose.Append(result, ValidateCompatibility(
+                sources, targetSource, transformed.Shape, sources[target.SourceIndex],
+                target.Shape, call.Location))
+        }
+    }
+    return result
 }
 
-func StableOrder(
-    kind model.CanonicalOrderKind,
-    identity text,
-) model.CanonicalOrderIdentity {
-    return model.CanonicalOrderIdentity{Stable: true, Kind: kind, TypeIdentity: identity}
-}
-
-func UnstableOrder() model.CanonicalOrderIdentity {
-    return model.CanonicalOrderIdentity{
-        Stable: false,
-        Kind: model.CanonicalOrderKind.Unstable,
-        TypeIdentity: "",
+func ValidateCompatibility(sources []model.SourceFile, actualSource model.SourceFile,
+    actual model.TypeShape, targetSource model.SourceFile, target model.TypeShape,
+    location text) []diagnostic.Diagnostic {
+    if SameType(actualSource, actual, targetSource, target) {
+        return []diagnostic.Diagnostic{}
+    }
+    if SameUnderlying(sources, actualSource, actual, targetSource, target) {
+        return []diagnostic.Diagnostic{
+            diagnostic.New("IMPLICIT_NAMED_CONVERSION", "type", location, TypeDetail(target)),
+        }
+    }
+    return []diagnostic.Diagnostic{
+        diagnostic.New("TYPE_MISMATCH", "type", location, TypeDetail(target)),
     }
 }
 
-func SignatureValue(
-    arguments []model.TypeShape,
-    result model.TypeShape,
-) BuiltinSignature {
-    return BuiltinSignature{Found: true, Arguments: arguments, Result: result}
+func TargetResolvable(sources []model.SourceFile, source model.SourceFile, shape model.TypeShape) bool {
+    return [whether declaration.FindTypeDeclaration uniquely resolves every named node in {shape}
+        from {source} and {sources} under imports, visibility, and recursion]
 }
 
-func EmptyBuiltinSignature() BuiltinSignature {
-    return BuiltinSignature{
-        Found: false,
-        Arguments: []model.TypeShape{},
-        Result: BuiltinType(""),
+func BoundedSemanticResult(sources []model.SourceFile, source model.SourceFile,
+    shape model.TypeShape) bool {
+    return [whether {shape} from {source} in {sources} resolves only to permitted scalar, enum,
+        optional, or fixed-struct judgment results]
+}
+
+func DerivationCategory(kind model.DerivationDependencyKind) text {
+    return [the category for loaded-snapshot forbidden derivation dependency {kind}]
+}
+
+func StableCollectionMember(sources []model.SourceFile, source model.SourceFile,
+    shape model.TypeShape) bool {
+    return [whether {shape} from {source} in {sources} has stable map-key or set-element order while
+        retaining named identity]
+}
+
+func CollectionCallFailure(sources []model.SourceFile, source model.SourceFile,
+    call model.CallSite) text {
+    return [empty when collection call {call} is valid in {source} and {sources}; otherwise the first
+        ARGUMENT_ARITY_MISMATCH, ARGUMENT_TYPE_MISMATCH, or RESULT_TYPE_MISMATCH under loaded-snapshot
+        builtin signatures and value flow]
+}
+
+func CollectionIndexFailure(sources []model.SourceFile, source model.SourceFile,
+    use model.CollectionIndexUse) text {
+    return [empty when collection index {use} is valid in {source} and {sources}; otherwise
+        INVALID_INDEX_TARGET for an unresolved or set target, or TYPE_MISMATCH for the first index
+        or result incompatibility]
+}
+
+func CollectionIndexLocation(sources []model.SourceFile, source model.SourceFile,
+    use model.CollectionIndexUse) text {
+    return [the exact diagnostic location for invalid index {use} in {source} and {sources}]
+}
+
+func CollectionIndexDetail(sources []model.SourceFile, source model.SourceFile,
+    use model.CollectionIndexUse) text {
+    return [the exact diagnostic detail for invalid index {use} in {source} and {sources}]
+}
+
+func CollectionIterationFailure(sources []model.SourceFile, source model.SourceFile,
+    use model.CollectionIteration) text {
+    return [empty when iteration {use} has a resolved slice, map, or set snapshot and exact
+        binding arity and types in {source} and {sources}; otherwise UNSUPPORTED_TYPE,
+        ITERATION_BINDING_ARITY_MISMATCH, or TYPE_MISMATCH for the first loaded-snapshot failure]
+}
+
+func CollectionIterationLocation(sources []model.SourceFile, source model.SourceFile,
+    use model.CollectionIteration) text {
+    return [the exact loaded-snapshot location for invalid iteration {use} in {source} and {sources},
+        using the first extra binding or in token for arity and the first mismatched binding for type]
+}
+
+func CollectionIterationDetail(sources []model.SourceFile, source model.SourceFile,
+    use model.CollectionIteration) text {
+    return [the exact loaded-snapshot detail for invalid iteration {use} in {source} and {sources},
+        including canonical-decimal binding count]
+}
+
+func ResolveValue(sources []model.SourceFile, source model.SourceFile,
+    argument model.Argument) ResolvedType {
+    return derive [the unique type of {argument} in {source} and {sources} from its known shape or
+        producer, collection-builtin, and index flow; when unresolved return Found false,
+        source index zero, and EmptyShape]
+}
+
+func ResolveConversionSource(sources []model.SourceFile, source model.SourceFile,
+    conversion model.ConversionSite) ResolvedType {
+    return derive [the unique known or producer-flow source type for {conversion} in {source} and
+        {sources}; when absent return Found false, source index zero, and EmptyShape]
+}
+
+func ResolveProducer(sources []model.SourceFile, source model.SourceFile, callID text) ResolvedType {
+    var argument model.Argument = model.Argument{
+        TypeSource: "", Type: EmptyShape(), Known: false,
+        ProducerCallID: callID, Location: "",
     }
+    return ResolveValue(sources, source, argument)
 }
 
-func EmptyCollectionSelection() CollectionSelection {
-    return CollectionSelection{
-        Found: false,
-        Kind: model.TypeShapeKind.Builtin,
-        Surface: BuiltinType(""),
-        Key: BuiltinType(""),
-        Value: BuiltinType(""),
+func TransformCallResult(sources []model.SourceFile, source model.SourceFile,
+    call model.CallSite, declaration model.Declaration) TransformResult {
+    return derive [apply {call.ResultTransforms} in order to {declaration.Result} under {source} and
+        {sources}; preserve exact OI_REQUIRES_NAMED_FUNCTION, OI_EFFECT_FORBIDDEN,
+        INVALID_AWAIT_TARGET, INVALID_INDEX_TARGET, and UNKNOWN_NAME failures with exact transform
+        locations/details; return the final shape, validity, and ordered diagnostics]
+}
+
+func SameType(leftSource model.SourceFile, left model.TypeShape,
+    rightSource model.SourceFile, right model.TypeShape) bool {
+    return [whether {left} from {leftSource} and {right} from {rightSource} have identical surface
+        identity, labels, elements, and contracts]
+}
+
+func SameUnderlying(sources []model.SourceFile, leftSource model.SourceFile,
+    left model.TypeShape, rightSource model.SourceFile, right model.TypeShape) bool {
+    return [whether {left} from {leftSource} and {right} from {rightSource} resolve in {sources} to
+        identical underlying shapes, labels, elements, and contracts]
+}
+
+func Surface(source model.SourceFile, shape model.TypeShape) model.TypeShape {
+    return derive [the recursive surface of {shape} in {source}, qualifying every named identity
+        through exact imports while preserving provenance]
+}
+
+func Underlying(sources []model.SourceFile, source model.SourceFile,
+    shape model.TypeShape) model.TypeShape {
+    return derive [the recursively expanded underlying shape of {shape} from {source} in
+        {sources}, using declaration.FindTypeDeclaration for named symbol identity; retain a qualified
+        named node at a missing or recursive declaration and rebase every declaration-origin node path
+        beneath its use-site path]
+}
+
+func Outer(sources []model.SourceFile, source model.SourceFile,
+    shape model.TypeShape) model.TypeShape {
+    return derive [the outer resolved shape of {shape} from {source} in {sources}, using
+        declaration.FindTypeDeclaration for named symbol identity, preserving complete surface
+        children and a qualified named node for missing or recursive declarations]
+}
+
+func FirstRuntimeHandle(shape model.TypeShape) HandleSelection {
+    return derive [the source-earliest loaded-snapshot runtime-only node in {shape}, ordered by
+        NodePath, with exact Origin; when absent return Found false and EmptyOrigin]
+}
+
+func ContainsRuntimeHandle(shape model.TypeShape) bool {
+    return [whether {shape} recursively contains task, channel, sender, or receiver]
+}
+
+func RuntimeHandlePositionAllowed(position model.RuntimeHandlePosition) bool {
+    return position == model.RuntimeHandlePosition.Local ||
+        position == model.RuntimeHandlePosition.OrdinaryParameter ||
+        position == model.RuntimeHandlePosition.AttachedOiParameter
+}
+
+func TypeDetail(shape model.TypeShape) text {
+    return [the deterministic loaded-snapshot display of type {shape}]
+}
+
+func SourceIndexForPath(values []model.SourceFile, path fs.Path) int {
+    var index int = 0
+    for value in values {
+        if value.Path == path {
+            return index
+        }
+        index = index + 1
     }
+    return 0
 }
 
-func BuiltinType(name text) model.TypeShape {
+func EmptyShape() model.TypeShape {
     return model.TypeShape{
-        Kind: model.TypeShapeKind.Builtin,
-        Name: name,
-        NodePath: []int{},
-        Labels: []text{},
-        Elements: []model.TypeShape{},
-        ContractSource: "",
-        Origin: EmptyTypeNodeOrigin(),
+        Kind: model.TypeShapeKind.Builtin, Name: "", NodePath: []int{}, Labels: []text{},
+        Elements: []model.TypeShape{}, ContractSource: "", Origin: EmptyOrigin(),
     }
 }
 
-func EmptyTypeNodeOrigin() model.TypeNodeOrigin {
+func EmptyOrigin() model.TypeNodeOrigin {
     return model.TypeNodeOrigin{
         Token: "",
-        Position: model.SourcePosition{
-            Path: "",
-            Line: 0,
-            Column: 0,
-            Location: "",
-            SourceOrder: 0,
-        },
+        Position: model.SourcePosition{Path: "", Line: 0, Column: 0, Location: "", SourceOrder: 0},
     }
-}
-
-func ContainsText(values []text, wanted text) bool {
-    for value in values {
-        if value == wanted {
-            return true
-        }
-    }
-    return false
-}
-
-func DeclarationKey(packageName text, name text) text {
-    return [the unambiguous declaration key for package {packageName} and name {name}]
-}
-
-func QualifiedTypeName(source model.SourceFile, name text) text {
-    return [the declaration key selected by raw named type {name} and {source.Imports}, defaulting to
-        {source.Package} without reading source text or filesystem state]
 }

@@ -1,2 +1,13 @@
 module oi/skills/compile-oi
-oi 0.0.1
+oi 0.0.2
+source internal/compile/compile.oi
+source internal/concurrency/concurrency.oi
+source internal/declaration/declaration.oi
+source internal/diagnose/diagnose.oi
+source internal/effect/effect.oi
+source internal/load/load.oi
+source internal/model/model.oi
+source internal/parse/parse.oi
+source internal/report/report.oi
+source internal/typecheck/typecheck.oi
+source main.oi
