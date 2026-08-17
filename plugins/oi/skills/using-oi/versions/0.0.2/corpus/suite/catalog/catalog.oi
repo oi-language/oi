@@ -4,6 +4,12 @@ import "std/diagnostic"
 import "std/execution"
 import "oi/corpus/0.0.2/suite/model"
 
+const SnapshotRoot text = "plugins/oi/skills/using-oi/versions/0.0.2/"
+
+func SnapshotTarget(relative text) text {
+    return SnapshotRoot + relative
+}
+
 func Diagnostic(category text, phase text, location text, detail text) diagnostic.Diagnostic {
     return diagnostic.Diagnostic{
         Category: category,
@@ -27,7 +33,7 @@ func CompileCase(
     }
     return model.Case{
         ID: id,
-        Target: target,
+        Target: SnapshotTarget(target),
         Phase: model.Phase.Compile,
         Status: status,
         Category: category,
@@ -69,7 +75,7 @@ func Receipt(
     }
 }
 
-func RuntimeCase(
+func RuntimeCaseAt(
     id text,
     target text,
     status model.Status,
@@ -87,6 +93,17 @@ func RuntimeCase(
         Reply: reply,
         Receipt: receipt,
     }
+}
+
+func RuntimeCase(
+    id text,
+    target text,
+    status model.Status,
+    category text,
+    reply model.ReplyIdentity?,
+    receipt model.ReceiptExpectation,
+) model.Case {
+    return RuntimeCaseAt(id, SnapshotTarget(target), status, category, reply, receipt)
 }
 
 func CompileCases() []model.Case {
@@ -173,6 +190,80 @@ func HelloCase() model.Case {
     )
 }
 
+func RegistryAnalysisCase() model.Case {
+    operations := []model.OperationExpectation{
+        Operation(execution.OperationKind.Allocation, execution.OperationStatus.Completed, "main.oi:30:38"),
+        Operation(execution.OperationKind.Judgment, execution.OperationStatus.Started, "main.oi:30:38"),
+        Operation(execution.OperationKind.Judgment, execution.OperationStatus.Completed, "main.oi:30:38"),
+        Operation(execution.OperationKind.Allocation, execution.OperationStatus.Completed, "main.oi:30:38"),
+        Operation(execution.OperationKind.Judgment, execution.OperationStatus.Started, "main.oi:30:38"),
+        Operation(execution.OperationKind.Judgment, execution.OperationStatus.Completed, "main.oi:30:38"),
+        Operation(execution.OperationKind.Allocation, execution.OperationStatus.Completed, "main.oi:30:38"),
+        Operation(execution.OperationKind.Judgment, execution.OperationStatus.Started, "main.oi:30:38"),
+        Operation(execution.OperationKind.Judgment, execution.OperationStatus.Completed, "main.oi:30:38"),
+        Operation(execution.OperationKind.Allocation, execution.OperationStatus.Completed, "main.oi:39:35"),
+        Operation(execution.OperationKind.Derivation, execution.OperationStatus.Started, "main.oi:39:35"),
+        Operation(execution.OperationKind.Derivation, execution.OperationStatus.Completed, "main.oi:39:35"),
+        Operation(execution.OperationKind.Allocation, execution.OperationStatus.Completed, "main.oi:49:5"),
+        Operation(execution.OperationKind.Reply, execution.OperationStatus.Started, "main.oi:49:5"),
+        Operation(execution.OperationKind.Reply, execution.OperationStatus.Completed, "main.oi:49:5"),
+    }
+    value := "RegistryReply{Decisions: []AliasDecision{AliasDecision{Path: \"flag\", ImportName: \"flag\", RejectedAlias: \"flag\"}, " +
+        "AliasDecision{Path: \"github.com/goccy/go-json\", ImportName: \"json\", RejectedAlias: \"goccyjson\"}, " +
+        "AliasDecision{Path: \"math/rand\", ImportName: \"rand\", RejectedAlias: \"rand\"}}}"
+    reply := Reply("main.RegistryReply", "8d381926c76af61cce2946edae8a712d356bbbb4693311a12fff3ce09d329c94", value)
+    return RuntimeCaseAt(
+        "registry-analysis",
+        "docs/language/cases/0.0.2/registry-analysis",
+        model.Status.Pass,
+        "none",
+        reply,
+        Receipt(execution.TerminalStatus.Completed, none, operations),
+    )
+}
+
+func MultiRootBootstrapCase() model.Case {
+    operations := []model.OperationExpectation{
+        Operation(execution.OperationKind.Allocation, execution.OperationStatus.Completed, "main.oi:42:5"),
+        Operation(execution.OperationKind.Reply, execution.OperationStatus.Started, "main.oi:42:5"),
+        Operation(execution.OperationKind.Reply, execution.OperationStatus.Completed, "main.oi:42:5"),
+    }
+    reply := Reply(
+        "main.BootstrapReply",
+        "0ae4f3bb645b9b17b01caf6792433d89c5c42ab5d8d1a4690a5a498594c89a09",
+        "BootstrapReply{Members: set[text]{\"api\", \"web\"}, Missing: set[text]{\"api\"}, Bootstrap: true}",
+    )
+    return RuntimeCaseAt(
+        "multi-root-bootstrap",
+        "docs/language/cases/0.0.2/multi-root-bootstrap",
+        model.Status.Pass,
+        "none",
+        reply,
+        Receipt(execution.TerminalStatus.Completed, none, operations),
+    )
+}
+
+func ActualInvocationProofCase() model.Case {
+    operations := []model.OperationExpectation{
+        Operation(execution.OperationKind.Allocation, execution.OperationStatus.Completed, "main.oi:14:5"),
+        Operation(execution.OperationKind.Reply, execution.OperationStatus.Started, "main.oi:14:5"),
+        Operation(execution.OperationKind.Reply, execution.OperationStatus.Completed, "main.oi:14:5"),
+    }
+    reply := Reply(
+        "main.InvocationReply",
+        "4659481977f915fd774d9453f8557556b29fc93e19a7e480010b00dcf4086652",
+        "InvocationReply{Challenge: \"proof-002\", Answer: \"invoked\"}",
+    )
+    return RuntimeCaseAt(
+        "actual-invocation-proof",
+        "docs/language/cases/0.0.2/actual-invocation-proof",
+        model.Status.Pass,
+        "none",
+        reply,
+        Receipt(execution.TerminalStatus.Completed, none, operations),
+    )
+}
+
 func Cases(
     runtimeCases []model.Case,
 ) []model.Case {
@@ -181,5 +272,8 @@ func Cases(
     for item in runtimeCases {
         cases = append(cases, item)
     }
+    cases = append(cases, RegistryAnalysisCase())
+    cases = append(cases, MultiRootBootstrapCase())
+    cases = append(cases, ActualInvocationProofCase())
     return cases
 }

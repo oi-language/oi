@@ -212,8 +212,10 @@ func Resumes(runtimeValues []model.RuntimeObservation, values []model.ResumeObse
     var noRepeat int = 0
     var versionMismatch int = 0
     for item in values {
-        if !((item.CaseID == "resume-no-repeat" && item.Target == "corpus/runtime/resume-no-repeat") ||
-            (item.CaseID == "resume-version-mismatch" && item.Target == "corpus/runtime/resume-version-mismatch")) {
+        if !((item.CaseID == "resume-no-repeat" &&
+            item.Target == "plugins/oi/skills/using-oi/versions/0.0.2/corpus/runtime/resume-no-repeat") ||
+            (item.CaseID == "resume-version-mismatch" &&
+                item.Target == "plugins/oi/skills/using-oi/versions/0.0.2/corpus/runtime/resume-version-mismatch")) {
             Fail("unexpected resume observation: " + item.CaseID)
         }
         var runtimeMatches int = 0

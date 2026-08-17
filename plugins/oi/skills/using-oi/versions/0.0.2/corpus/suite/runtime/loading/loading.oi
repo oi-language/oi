@@ -32,7 +32,7 @@ func CompileSourcesMatch(actual model.CompileObservation, evidence model.TargetE
 
 func Integrity(caseValue model.Case, compileValue model.CompileObservation, observation model.RuntimeObservation) bool {
     return [true exactly when {compileValue} is the trusted direct loader/compiler report for {caseValue.Target} and its exact language, module, source count/characters,
-        and ordered Source identities are cross-bound to {observation.Evidence}; {caseValue.Target}, {observation.Target}, and {observation.Evidence.Target} are the same normalized version-root-relative target;
+        and ordered Source identities are cross-bound to {observation.Evidence}; {caseValue.Target}, {observation.Target}, and {observation.Evidence.Target} are the same normalized repository-root-relative target;
         {observation.Evidence} verifies structured entry, manifest order, ordered artifacts, and ordered decoded project source identities,
         and its ManifestDigest and SourceDigest are recomputed from those protected materials by frozen runtime/execution.md framing;
         {observation.Receipt} has those exact language, module, entry, manifest, artifact, input, mapping, authority, policy, and character fields;

@@ -1,0 +1,50 @@
+package main
+
+type ImportClass enum {
+    Standard
+    ThirdParty
+}
+
+type ImportFact struct {
+    Path text
+    Package text
+    RequestedAlias text?
+    Class ImportClass
+    NameConflict bool
+}
+
+type AliasDecision struct {
+    Path text
+    ImportName text
+    RejectedAlias text?
+}
+
+type RegistryReply struct {
+    Decisions []AliasDecision
+}
+
+func Analyze(imports []ImportFact) RegistryReply {
+    var seen set[text] = set[text]{}
+    var decisions map[text]AliasDecision = map[text]AliasDecision{}
+    for fact in imports {
+        var decision AliasDecision = [copy {fact.Path} to Path;
+            use {fact.Package} as ImportName and set RejectedAlias to none when {fact.RequestedAlias} is absent;
+            use the present alias as ImportName and set RejectedAlias to none when {fact.RequestedAlias} is present and {fact.NameConflict} is true;
+            otherwise use {fact.Package} as ImportName and put the present alias in RejectedAlias]
+        if !has(seen, fact.Path) {
+            seen = add(seen, fact.Path)
+            decisions = put(decisions, fact.Path, decision)
+        }
+    }
+    var ordered []AliasDecision = derive [make one AliasDecision for each {decisions} entry in canonical map-key order]
+    return RegistryReply{Decisions: ordered}
+}
+
+effect Reply(value RegistryReply) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main(imports []ImportFact) {
+    Reply(Analyze(imports))
+}

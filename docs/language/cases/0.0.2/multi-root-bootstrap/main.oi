@@ -1,0 +1,43 @@
+package main
+
+type RootFact struct {
+    Root text
+    Member text
+}
+
+type RegistryState struct {
+    Registered set[text]
+}
+
+type BootstrapReply struct {
+    Members set[text]
+    Missing set[text]
+    Bootstrap bool
+}
+
+func Decide(roots []RootFact, registry RegistryState) BootstrapReply {
+    var members set[text] = set[text]{}
+    for root in roots {
+        members = add(members, root.Member)
+    }
+    var missing set[text] = set[text]{}
+    for member in members {
+        if !has(registry.Registered, member) {
+            missing = add(missing, member)
+        }
+    }
+    return BootstrapReply{
+        Members: members,
+        Missing: missing,
+        Bootstrap: len(missing) > 0,
+    }
+}
+
+effect Reply(value BootstrapReply) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main(roots []RootFact, registry RegistryState) {
+    Reply(Decide(roots, registry))
+}

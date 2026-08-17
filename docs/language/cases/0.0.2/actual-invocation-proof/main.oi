@@ -1,0 +1,18 @@
+package main
+
+type InvocationReply struct {
+    Challenge text
+    Answer text
+}
+
+effect Reply(value InvocationReply) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func main(challenge text) {
+    Reply(InvocationReply{
+        Challenge: challenge,
+        Answer: "invoked",
+    })
+}
