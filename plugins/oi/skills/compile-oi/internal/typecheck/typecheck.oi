@@ -40,14 +40,8 @@ func Validate(sources []model.SourceFile) []diagnostic.Diagnostic {
             } else if TargetResolvable(sources, source, derivation.Target) {
                 var handle HandleSelection = FirstRuntimeHandle(
                     Underlying(sources, source, derivation.Target))
-                if handle.Found {
-                    result = append(result, diagnostic.New("DERIVATION_HANDLE_FORBIDDEN", "type",
-                        handle.Origin.Position.Location, handle.Origin.Token))
-                }
-                for dependency in derivation.Dependencies {
-                    result = append(result, diagnostic.New(DerivationCategory(dependency.Kind),
-                        "type", dependency.Position.Location, dependency.Detail))
-                }
+                result = diagnose.Append(result, diagnose.DerivationDiagnostics(
+                    handle.Found, handle.Origin, derivation.Dependencies))
             }
         }
         for use in source.CollectionTypes {
@@ -188,10 +182,6 @@ func BoundedSemanticResult(sources []model.SourceFile, source model.SourceFile,
     shape model.TypeShape) bool {
     return [whether {shape} from {source} in {sources} resolves only to permitted scalar, enum,
         optional, or fixed-struct judgment results]
-}
-
-func DerivationCategory(kind model.DerivationDependencyKind) text {
-    return [the category for loaded-snapshot forbidden derivation dependency {kind}]
 }
 
 func StableCollectionMember(sources []model.SourceFile, source model.SourceFile,

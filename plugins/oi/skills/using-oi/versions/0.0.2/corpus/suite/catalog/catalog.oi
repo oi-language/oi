@@ -192,6 +192,9 @@ func HelloCase() model.Case {
 
 func RegistryAnalysisCase() model.Case {
     operations := []model.OperationExpectation{
+        Operation(execution.OperationKind.Allocation, execution.OperationStatus.Completed, "main.oi:29:5"),
+        Operation(execution.OperationKind.Iteration, execution.OperationStatus.Started, "main.oi:29:5"),
+        Operation(execution.OperationKind.Iteration, execution.OperationStatus.Completed, "main.oi:29:5"),
         Operation(execution.OperationKind.Allocation, execution.OperationStatus.Completed, "main.oi:30:38"),
         Operation(execution.OperationKind.Judgment, execution.OperationStatus.Started, "main.oi:30:38"),
         Operation(execution.OperationKind.Judgment, execution.OperationStatus.Completed, "main.oi:30:38"),
@@ -224,6 +227,12 @@ func RegistryAnalysisCase() model.Case {
 
 func MultiRootBootstrapCase() model.Case {
     operations := []model.OperationExpectation{
+        Operation(execution.OperationKind.Allocation, execution.OperationStatus.Completed, "main.oi:20:5"),
+        Operation(execution.OperationKind.Iteration, execution.OperationStatus.Started, "main.oi:20:5"),
+        Operation(execution.OperationKind.Iteration, execution.OperationStatus.Completed, "main.oi:20:5"),
+        Operation(execution.OperationKind.Allocation, execution.OperationStatus.Completed, "main.oi:24:5"),
+        Operation(execution.OperationKind.Iteration, execution.OperationStatus.Started, "main.oi:24:5"),
+        Operation(execution.OperationKind.Iteration, execution.OperationStatus.Completed, "main.oi:24:5"),
         Operation(execution.OperationKind.Allocation, execution.OperationStatus.Completed, "main.oi:42:5"),
         Operation(execution.OperationKind.Reply, execution.OperationStatus.Started, "main.oi:42:5"),
         Operation(execution.OperationKind.Reply, execution.OperationStatus.Completed, "main.oi:42:5"),

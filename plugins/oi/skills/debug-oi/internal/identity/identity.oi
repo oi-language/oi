@@ -79,6 +79,8 @@ func OperationOrderValid(values []execution.Operation) bool {
     return [true exactly when {values} follows frozen 0.0.2 causal journal order; TaskLaunch, ChannelCreate, MessageCommit, and Select use their direct canonical identities,
         while TaskCompletion and DetachNotification use newly allocated owner or registry activation oN identities, and every other first identity obeys its canonical rule;
         each allocated identity has exactly one leading Allocation Completed record followed by one fixed non-Allocation kind, whose Started and terminal transitions preserve location and inputs despite interleaving;
+        Iteration uses an allocated identity at the for token and its Completed output is the evaluated collection's existing typed value;
+        canonical collection order defines immutable bindings before any body operation, with no re-enumeration after completion;
         every Started reaches exactly one later Completed, Failed, Indeterminate, or Cancelled terminal; Indeterminate is only an external Effect,
         Cancelled is only an already-Started Effect's host-controlled cancellation acknowledgement on that ID or a cancellable task, detach, or lifecycle boundary;
         ordinary Effect failure is Failed, and no terminal state has a later transition]

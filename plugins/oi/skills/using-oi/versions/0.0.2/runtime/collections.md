@@ -20,6 +20,6 @@ Literal expressions evaluate left-to-right. After evaluating a candidate key/ele
 
 ## Iteration snapshots
 
-On every dynamic `for ... in collection` encounter, evaluate the collection once and snapshot the complete typed sequence before the first body execution. Slice sequence is ascending zero-based index/value; map sequence is key/value in canonical key order; set sequence is value in canonical element order. A one-binding slice omits indexes.
+On every dynamic `for ... in collection` encounter, evaluate once, allocate its `oN` at the `for` token, append `Iteration Started`, then `Iteration Completed` with that collection's existing typed value as the full protected immutable sequence before the first body execution. Incomplete setup is safe deterministic internal work under that ID. Slice sequence is ascending zero-based index/value; map sequence is key/value in canonical key order; set sequence is value in canonical element order. A one-binding slice omits indexes.
 
-The sequence length, order, keys, and values are fixed for that encounter. Body assignment or rebinding of the source variable does not affect it. Each later loop encounter takes a new snapshot. `continue` advances within the existing snapshot; `break` discards the remaining sequence. Journal/replay identify an encounter by the operation identity allocated under `runtime/execution.md` and never re-enumerate a completed boundary from host state.
+The body consumes only that completed snapshot. Its length, order, keys, and values are fixed for the encounter; source rebinding cannot alter it. Each later encounter takes a new snapshot. `continue` advances within it; `break` discards its remainder. Replay restores a completed snapshot and never re-enumerates it from host state.

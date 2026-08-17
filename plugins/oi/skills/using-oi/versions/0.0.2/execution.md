@@ -4,10 +4,10 @@ Identity is exactly `Oi 0.0.2`. This file is the sole base-language authority an
 
 ## deterministic load
 
-1. From target directory/file parent, logical-read nearest `oi.mod` once; retain content/identity and parse only canonical `module`/exact `oi`. This is pre-recognition bootstrap.
-2. Logical-read selected `execution.md` once; recognize snapshot only after exact identity validates, then fully validate held module bytes. Never reread. Earlier version/spec failure is bootstrap-only.
-3. Logical read: contiguous nonoverlapping bytes zero→true EOF; close byte size, characters, SHA-256. Invalid UTF-8/coverage/EOF/drift stops.
-4. `snapshot-metadata`/`version-discovery`/`manifest-inspection` may stop. Else load run-mode rows; validate manifested sources; parse/type; union triggers; close dependencies; load remaining rows/std by path bytes once. Physical/receipt orders differ.
+1. From target/file parent, logical-read nearest `oi.mod` once; retain bytes/identity and parse only canonical `module`/exact `oi` before recognition.
+2. Logical-read selected `execution.md` once; recognize only after exact identity, then validate held module bytes. Never reread; earlier version/spec failure is bootstrap-only.
+3. Logical read=contiguous nonoverlapping bytes 0→true EOF; close byte size, characters, SHA-256. Invalid UTF-8/coverage/EOF/drift stops.
+4. `snapshot-metadata`/`version-discovery`/`manifest-inspection` may stop. Else load run-mode rows, validate sources, parse/type, union triggers, close dependencies, then load remaining rows/std by path bytes once. Physical/receipt orders differ.
 
 Missing base/runtime: `MISSING_SPEC_SHARD`/`MISSING_RUNTIME_SHARD`; bad identity/cycle/row/contradiction: `INVALID_SPEC_SNAPSHOT`; unsupported: `UNSUPPORTED_VERSION`. Never default/combine/reinterpret.
 
@@ -126,7 +126,7 @@ ReturnStmt="return",[Expression]; BreakStmt="break"; ContinueStmt="continue"; St
 HandoffStmt="handoff",CallExpression; ExpressionStmt=CallExpression|OiExpression|AwaitExpression|DetachExpr;
 ```
 
-`:=`/`var` locals mutable; const/parameters immutable. Assignment roots=live mutable locals; struct/slice selectors rebuild. Local/assignable-field map/set: whole-value rebind only (`m = put(m,k,v)`); map index/set member/text index/handles cannot assign or mutate in place. Collections update only via returned `append`/`put`/`add`/`remove`. Assignment/argument types identical; literals uniquely targeted; named conversion explicit. `if` requires bool. Switch evaluates once: first equal, else final default; no fallthrough. Loop-entry snapshot: slice value or ascending index/value; map canonical key/value; set canonical value; later source rebind cannot alter. `break` targets loop/switch/select; `continue` loop.
+`:=`/`var` locals mutable; const/parameters immutable. Assignments root in live mutable locals; struct/slice selectors rebuild. Local/field map/set rebind only whole values (`m = put(m,k,v)`); map/set/text indexes and handles cannot assign or mutate in place. Updates use returned `append`/`put`/`add`/`remove`. Assignment/argument types identical; literals uniquely targeted; named conversion explicit. `if` requires bool. Switch evaluates once: first equal or final default; no fallthrough. Dynamic collection loop evaluates once, allocates `oN` at `for`, and records Iteration Started→Completed with its full protected typed immutable sequence before body. Body uses only it; replay restores Completed without re-enumeration; incomplete setup is deterministic under that ID. `break` targets loop/switch/select; `continue` loop.
 
 `ITERATION_BINDING_ARITY_MISMATCH`: `type`; exact Detail: `slice requires 1 or 2 bindings; found N`, `map requires 2 bindings; found N`, or `set requires 1 binding; found N`; `N` canonical decimal; Location=first extra binding, or `in` if too few.
 
@@ -136,6 +136,6 @@ Function arguments left-to-right; ≤1 result; all result paths required; unit f
 
 `oi` ordinary function→`task[T]`; `await task[T]`→T; other targets fail. `detach oi Call` valueless; handoff terminal to unit function. Durable values recursively handle-free. Channels: positive-bounded typed locals; receiver affine; endpoints never enter data/effect/semantic/detach/handoff. Task/channel authority=reachable demand∩current. Select permits send/receive/await, one final default.
 
-Evaluation: source/left-to-right. Named contract validation: first construction/conversion/input binding, underlying/unvalidated→named, or changed target named type runs it; immutable already-validated exact same named type/value reuses evidence across assignment/argument/return/effect, with no Judgment. Context=verified artifacts, typed arguments, mappings/authorities/policy, trace/checkpoints/journal only. Semantic/derive/effect/task/await/channel/detach/handoff use stable IDs. External effect needs full typed result; untrusted completion is indeterminate, not guessed/retried. Reply unchanged; receipt separate/unreadable.
+Evaluation is source/left-to-right. Named contract runs at first construction/conversion/input binding, underlying/unvalidated→named, or changed named target; immutable validated exact same named type/value reuses evidence across assignment/argument/return/effect, with no Judgment. Context=verified artifacts, typed arguments, mappings/authorities/policy, trace/checkpoints/journal only. Semantic/derive/effect/task/await/channel/detach/handoff use stable IDs. External effect needs full typed result; untrusted completion is indeterminate, not guessed/retried. Reply unchanged; receipt separate/unreadable.
 
-Phases `parse → module → type → effect mapping → input binding → execution admission → runtime`; failure bars later. Static choice: phase, normalized-path bytes, line, column; runtime: journal order, source position, TaskID. Location=one-based UTF-8-scalar `path:line:column`; failure=Category/Phase/Location/Detail/Trace. Post-recognition failure yields terminal receipt; pre-recognition bootstrap failure stays bootstrap diagnostic.
+Phases `parse → module → type → effect mapping → input binding → execution admission → runtime`; failure bars later. Static choice: phase, normalized-path bytes, line, column; runtime: journal order, source position, TaskID. Location=one-based UTF-8-scalar `path:line:column`; failure=Category/Phase/Location/Detail/Trace. Recognized failure has a terminal receipt; bootstrap-only failure has only its diagnostic.

@@ -64,3 +64,38 @@ func SourcePositionBefore(left model.SourcePosition, right model.SourcePosition)
     }
     return left.SourceOrder < right.SourceOrder
 }
+
+func FirstDerivationHandle(
+    targetFound bool,
+    target model.TypeNodeOrigin,
+    dependencies []model.DerivationDependency,
+) model.TypeNodeOrigin {
+    return derive [from {target} when {targetFound} and each RuntimeHandle item in {dependencies},
+        return one source-earliest by Position.SourceOrder, Line, then Column; target retains its
+        Origin; dependency Origin uses Detail as Token and its Position; an exact tie retains target
+        then dependency order; when absent return empty Token and Position]
+}
+
+func DerivationDiagnostics(
+    targetFound bool,
+    target model.TypeNodeOrigin,
+    dependencies []model.DerivationDependency,
+) []diagnostic.Diagnostic {
+    var result []diagnostic.Diagnostic = []diagnostic.Diagnostic{}
+    var handle model.TypeNodeOrigin = FirstDerivationHandle(targetFound, target, dependencies)
+    if handle.Position.Location != "" {
+        result = append(result, diagnostic.New(
+            "DERIVATION_HANDLE_FORBIDDEN", "type", handle.Position.Location, handle.Token))
+    }
+    for dependency in dependencies {
+        if dependency.Kind != model.DerivationDependencyKind.RuntimeHandle {
+            result = append(result, diagnostic.New(DerivationCategory(dependency.Kind),
+                "type", dependency.Position.Location, dependency.Detail))
+        }
+    }
+    return result
+}
+
+func DerivationCategory(kind model.DerivationDependencyKind) text {
+    return [the category for loaded-snapshot forbidden derivation dependency {kind}]
+}

@@ -1,6 +1,5 @@
 package collections
 
-import "std/diagnostic"
 import "std/execution"
 import "oi/corpus/0.0.2/suite/catalog"
 import "oi/corpus/0.0.2/suite/model"
@@ -72,15 +71,29 @@ func ChannelProgress() model.Case {
     return legacy.Pass("channel-progress", reply, operations)
 }
 
+func Collections() model.Case {
+    operations := legacy.Complete(execution.OperationKind.Iteration, "main.oi:28:5")
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Iteration, "main.oi:36:5"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Iteration, "main.oi:44:5"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Reply, "main.oi:66:5"))
+    reply := catalog.Reply(
+        "main.CollectionResult",
+        "d9c63d8d5d5bf678c5b7cf1d6c3b31905f0eb389b4da4981a1a575215de4feb3",
+        "CollectionResult{Indexed: []int{0, 10, 1, 20, 2, 30}, Mapped: []text{\"alpha\", \"bravo\"}, MappedValues: []int{1, 20}, Members: []text{\"alpha\", \"bravo\"}, HasMapKey: true, HasSetValue: true}",
+    )
+    return catalog.RuntimeCase(
+        "collections",
+        "corpus/valid/collections",
+        model.Status.Pass,
+        "none",
+        reply,
+        catalog.Receipt(execution.TerminalStatus.Completed, none, operations),
+    )
+}
+
 func Cases() []model.Case {
     return []model.Case{
-        catalog.CompileCase(
-            "collections",
-            "corpus/valid/collections",
-            model.Status.Pass,
-            "none",
-            []diagnostic.Diagnostic{},
-        ),
+        Collections(),
         Failed("missing-map-key", "corpus/runtime/missing-map-key", "MISSING_KEY"),
         Failed("duplicate-map-key", "corpus/runtime/duplicate-map-key", "DUPLICATE_KEY"),
         Failed("duplicate-set-element", "corpus/runtime/duplicate-set-element", "DUPLICATE_KEY"),

@@ -128,8 +128,8 @@ func CompileReport(
 ) report.UpgradeReport {
     compiled := capture(CompileSource(module, available))
     if !compiled.Ok {
-        return report.Incompatible(
-            sourceVersion, targetVersion, changes,
+        return report.Unavailable(
+            sourceVersion, targetVersion,
             []diagnostic.Diagnostic{report.FromFailure(compiled.Failure)})
     }
     var result CompileResult = compiled.Value

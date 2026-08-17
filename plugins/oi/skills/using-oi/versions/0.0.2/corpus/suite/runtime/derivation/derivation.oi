@@ -71,10 +71,17 @@ func Encoding() model.Case {
     operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:63:25", 1)
     operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:67:30", 6)
     operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:9:12", 7)
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Iteration, "std/encoding/encoding.oi:18:5"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Iteration, "std/encoding/encoding.oi:22:9"))
     operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:29:12", 1)
     operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:35:12", 1)
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Iteration, "std/encoding/encoding.oi:18:5"))
     operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:29:12", 1)
     operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:35:12", 1)
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Iteration, "std/encoding/encoding.oi:18:5"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Iteration, "std/encoding/encoding.oi:18:5"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Iteration, "std/encoding/encoding.oi:22:9"))
+    operations = legacy.Append(operations, legacy.Complete(execution.OperationKind.Iteration, "std/encoding/encoding.oi:22:9"))
     index := 0
     for index < 5 {
         operations = RepeatComplete(operations, execution.OperationKind.Judgment, "std/encoding/encoding.oi:41:18", 1)
