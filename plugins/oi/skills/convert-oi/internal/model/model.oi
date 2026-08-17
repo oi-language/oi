@@ -1,6 +1,18 @@
 package model
 
 import "std/diagnostic"
+import "std/fs"
+
+type TargetVersion enum {
+    V001
+    V002
+}
+
+type FindingKind enum {
+    HiddenWrite
+    HiddenPrefixWrite
+    HiddenWriteChain
+}
 
 type Identifier struct {
     Value text
@@ -110,6 +122,29 @@ type BehaviorModel struct {
     NoMatch StopAction
     Authorities []Authority
     OutputContract SafeText
+    Diagnostics []diagnostic.Diagnostic
+}
+
+type ProofFinding struct {
+    Kind FindingKind
+    Name Identifier
+    After Identifier
+    Location text
+}
+
+type Inspection struct {
+    Behavior BehaviorModel
+    Findings []ProofFinding
+}
+
+type SourceRead struct {
+    Observation fs.Observation
+    Content text
+    Diagnostics []diagnostic.Diagnostic
+}
+
+type DestinationRead struct {
+    Observation fs.Observation
     Diagnostics []diagnostic.Diagnostic
 }
 

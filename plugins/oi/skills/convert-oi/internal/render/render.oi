@@ -2,6 +2,11 @@ package render
 
 import "oi/skills/convert-oi/internal/model"
 
+const ReplyToken text = "Reply"
+const ReadToken text = "fs.Read"
+const WriteToken text = "fs.Write"
+const TerminalToken text = "stop"
+
 func TypeToken(value model.ValueType) text {
     switch value {
     case model.ValueType.Text:
@@ -151,8 +156,11 @@ func Entry(behavior model.BehaviorModel) text {
     return source
 }
 
-func Module(module model.SafeText) text {
-    return "module " + module.Value + "\noi 0.0.1\n"
+func Module(module model.SafeText, target model.TargetVersion) text {
+    if target == model.TargetVersion.V001 {
+        return "module " + module.Value + "\noi 0.0.1\n"
+    }
+    return "module " + module.Value + "\noi 0.0.2\nsource main.oi\n"
 }
 
 func Adapter(sourceSkill model.SourceSkill, behavior model.BehaviorModel) text {
@@ -188,29 +196,32 @@ func Adapter(sourceSkill model.SourceSkill, behavior model.BehaviorModel) text {
     return source
 }
 
-func Recover(bundle model.Bundle) model.BundleRecovery {
-    return [independently parse the exact UTF-8 LF bytes of {bundle.MainSource} under the loaded Oi 0.0.1 grammar and type rules without invoking Entry, Module, Adapter, or any source Skill;
-        accept only package main; an std/fs import exactly when a recovered Read or Write exists; one named Result text contract; the exact concrete Reply uses caller.reply effect;
+func Recover(bundle model.Bundle, target model.TargetVersion) model.BundleRecovery {
+    return derive [independently parse the exact UTF-8 LF bytes of {bundle.MainSource} under the closed generated-source grammar selected by {target}
+        without invoking Entry, Module, Adapter, or any source Skill;
+        accept only package main; an std/fs import exactly when a recovered read or write exists; one named Result text contract;
+        the exact concrete {ReplyToken} declaration uses caller.reply authority;
         then zero or more uniquely named helper functions in source order whose AST is exactly one of Pass returning its value,
-        Read returning fs.Read(path), Write calling fs.Write(path, content), Reply calling Reply(Result(value)),
-        or Stop calling stop with two quoted Safe literals;
-        reject the exact Oi 0.0.1 keyword and intrinsic-call sets and the exact renderer-reserved identifiers
+        read returning {ReadToken}(path), write calling {WriteToken}(path, content), reply calling {ReplyToken}(Result(value)),
+        or terminal helper calling {TerminalToken} with two quoted Safe literals;
+        reject the exact selected target keyword and intrinsic-call sets and the exact renderer-reserved identifiers
         underscore, main, Result, Reply, fs, caller, reply, value, path, and content for every recovered caller, helper, and result name;
         require one final lowercase resultless main with globally unique non-keyword, non-reserved typed text-or-fs.Path parameters,
         an ordered unconditional helper-call prefix, and ordered if branches whose predicates are input equals quoted Safe literal,
         whose bodies are ordered helper invocations with arguments that resolve only to parameters, earlier helper results, or quoted literals of the required type;
-        derive authorities from reachable Reply, fs.Read, and fs.Write call ASTs; reject every other declaration, statement, expression,
+        derive authorities from reachable {ReplyToken}, {ReadToken}, and {WriteToken} call ASTs; reject every other declaration, statement, expression,
         import, comment, blank-line position, unresolved reference, implicit conversion, or byte;
         require each branch operand to resolve only from caller inputs, the unconditional prefix, or a producer earlier in that branch;
-        require each branch to contain exactly one final Reply followed only by renderer return, or one final Stop with no following statement;
+        require each branch to contain exactly one final reply followed only by renderer return, or one final terminal helper with no following statement;
         require declared authorities to equal the caller.reply, workspace.read, workspace.write UTF-8 ordered deduplicated union of reachable actions;
         recover exact caller inputs, predicates, step names, action kinds, structured operands and results,
-        unconditional targets, branch targets, authorities, no-match stop, and output contract into one model.LoweredProgram
+        unconditional targets, branch targets, authorities, no-match terminal action, and output contract into one model.LoweredProgram
         with Identifier and SafeText Value wrappers;
-        independently parse {bundle.ModuleSource} as exactly module SP validated-module-path LF oi SP 0.0.1 LF and no other byte;
+        independently parse {bundle.ModuleSource}: target V001 is exactly module SP validated-module-path LF oi SP 0.0.1 LF;
+        target V002 is exactly module SP validated-module-path LF oi SP 0.0.2 LF source SP main.oi LF; accept no other byte;
         independently parse {bundle.AdapterSource} as the exact four-line frontmatter, Converted Oi Skill heading,
         ordered trigger bullets, fixed using-oi routing sentence,
-        ordered typed-input bindings, exact reachable-effect mappings, and lowercase main dispatch sentence,
+        ordered typed-input bindings, exact reachable-effect mappings, and lowercase main invocation sentence,
         all with the exact punctuation and LF layout shown by that closed adapter grammar;
         recover module, version, adapter name, description, ordered inputs, triggers, and authorities into typed Value wrappers without comparing text produced by any renderer;
         on any grammar, type, reference, order, artifact, or adapter mismatch return Valid false with ordered GENERATED_ARTIFACT_INVALID diagnostics and a zero program;

@@ -1,0 +1,365 @@
+package proof
+
+import "std/diagnostic"
+import "std/encoding"
+import "std/fs"
+import "oi/skills/convert-oi/internal/inspect"
+import "oi/skills/convert-oi/internal/model"
+import "oi/skills/convert-oi/internal/render"
+
+func Issue(category text, location text, detail text) diagnostic.Diagnostic {
+    return diagnostic.New(category, "conversion", location, detail)
+}
+
+func SameAuthorities(left []model.Authority, right []model.Authority) bool {
+    if len(left) != len(right) {
+        return false
+    }
+    index := 0
+    for value in left {
+        if value != right[index] {
+            return false
+        }
+        index = index + 1
+    }
+    return true
+}
+
+func HiddenDiagnostics(findings []model.ProofFinding) []diagnostic.Diagnostic {
+    diagnostics := []diagnostic.Diagnostic{}
+    for finding in findings {
+        category := "CONVERSION_HIDDEN_WRITE"
+        detail := finding.Name.Value
+        if finding.Kind == model.FindingKind.HiddenPrefixWrite {
+            category = "CONVERSION_HIDDEN_PREFIX_WRITE"
+        }
+        if finding.Kind == model.FindingKind.HiddenWriteChain {
+            category = "CONVERSION_HIDDEN_WRITE_CHAIN"
+            detail = finding.Name.Value + " after " + finding.After.Value
+        }
+        diagnostics = append(diagnostics, diagnostic.New(category, "conversion proof", finding.Location, detail))
+    }
+    return diagnostics
+}
+
+func HasAuthority(values []model.Authority, wanted model.Authority) bool {
+    for value in values {
+        if value == wanted {
+            return true
+        }
+    }
+    return false
+}
+
+func StepOrdinal(steps []model.Step, name model.Identifier) int {
+    for step in steps {
+        if step.Name == name {
+            return step.Ordinal
+        }
+    }
+    return 0
+}
+
+func TriggerExists(triggers []model.Predicate, ordinal int) bool {
+    for trigger in triggers {
+        if trigger.Ordinal == ordinal {
+            return true
+        }
+    }
+    return false
+}
+
+func AuthorityName(value model.Authority) text {
+    switch value {
+    case model.Authority.CallerReply:
+        return "caller.reply"
+    case model.Authority.WorkspaceRead:
+        return "workspace.read"
+    default:
+        return "workspace.write"
+    }
+}
+
+func IdentifierPresent(values []model.Identifier, wanted model.Identifier) bool {
+    for value in values {
+        if value == wanted {
+            return true
+        }
+    }
+    return false
+}
+
+func ResultAvailable(values []model.Binding, name model.Identifier, valueType model.ValueType) bool {
+    for value in values {
+        if value.Present && value.Name == name && value.Type == valueType {
+            return true
+        }
+    }
+    return false
+}
+
+func AvailableReference(
+    behavior model.BehaviorModel,
+    results []model.Binding,
+    value model.ValueReference,
+    expected model.ValueType,
+) bool {
+    if value.Type != expected {
+        return false
+    }
+    if value.Kind == model.ReferenceKind.Input {
+        return value.Literal.Value == "" && HasInput(behavior.Inputs, value.Name, expected)
+    }
+    if value.Kind == model.ReferenceKind.StepResult {
+        return value.Literal.Value == "" && ResultAvailable(results, value.Name, expected)
+    }
+    if value.Kind == model.ReferenceKind.Literal {
+        return value.Name.Value == ""
+    }
+    return false
+}
+
+func StepReferencesAvailable(
+    behavior model.BehaviorModel,
+    results []model.Binding,
+    step model.Step,
+) bool {
+    if step.Action == model.ActionKind.Pass {
+        return step.Result.Present && AvailableReference(behavior, results, step.Value, step.Result.Type)
+    }
+    if step.Action == model.ActionKind.Read {
+        return AvailableReference(behavior, results, step.Path, model.ValueType.Path)
+    }
+    if step.Action == model.ActionKind.Write {
+        return AvailableReference(behavior, results, step.Path, model.ValueType.Path) &&
+            AvailableReference(behavior, results, step.Content, model.ValueType.Text)
+    }
+    if step.Action == model.ActionKind.Reply {
+        return AvailableReference(behavior, results, step.Value, model.ValueType.Text)
+    }
+    return true
+}
+
+func StepAtOrdinal(steps []model.Step, ordinal int) model.Step {
+    for step in steps {
+        if step.Ordinal == ordinal {
+            return step
+        }
+    }
+    return steps[0]
+}
+
+func Validate(behavior model.BehaviorModel, target model.TargetVersion) []diagnostic.Diagnostic {
+    diagnostics := inspect.ValidateShape(behavior, target)
+    if len(behavior.Diagnostics) != 0 {
+        return diagnostics
+    }
+    prefixResults := []model.Binding{}
+    lastPrefixStep := 0
+    needsReply := false
+    needsRead := false
+    needsWrite := false
+    for stepName in behavior.Unconditional {
+        currentStep := StepOrdinal(behavior.Steps, stepName)
+        if currentStep <= lastPrefixStep {
+            diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid unconditional step order"))
+        }
+        if currentStep != 0 {
+            step := StepAtOrdinal(behavior.Steps, currentStep)
+            if step.Action == model.ActionKind.Reply || step.Action == model.ActionKind.Stop {
+                diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "unconditional prefix cannot terminate"))
+            }
+            if !StepReferencesAvailable(behavior, prefixResults, step) {
+                diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid unconditional dataflow"))
+            }
+            if step.Action == model.ActionKind.Read {
+                needsRead = true
+            }
+            if step.Action == model.ActionKind.Write {
+                needsWrite = true
+            }
+            if step.Result.Present {
+                prefixResults = append(prefixResults, step.Result)
+            }
+        }
+        lastPrefixStep = currentStep
+    }
+    expectedOrdinal := 1
+    for branch in behavior.Branches {
+        if branch.Ordinal != expectedOrdinal || branch.Trigger != expectedOrdinal || !TriggerExists(behavior.Triggers, branch.Trigger) {
+            diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid branch ordering"))
+        }
+        results := prefixResults
+        lastStep := 0
+        terminalCount := 0
+        stepIndex := 0
+        for stepName in branch.Steps {
+            currentStep := StepOrdinal(behavior.Steps, stepName)
+            if currentStep <= lastStep || IdentifierPresent(behavior.Unconditional, stepName) {
+                diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid branch step order"))
+            }
+            if currentStep != 0 {
+                step := StepAtOrdinal(behavior.Steps, currentStep)
+                if terminalCount != 0 {
+                    diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "branch step follows terminal"))
+                }
+                if !StepReferencesAvailable(behavior, results, step) {
+                    diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid branch dataflow"))
+                }
+                if step.Action == model.ActionKind.Read {
+                    needsRead = true
+                }
+                if step.Action == model.ActionKind.Write {
+                    needsWrite = true
+                }
+                if step.Action == model.ActionKind.Reply {
+                    needsReply = true
+                    terminalCount = terminalCount + 1
+                }
+                if step.Action == model.ActionKind.Stop {
+                    terminalCount = terminalCount + 1
+                }
+                if (step.Action == model.ActionKind.Reply || step.Action == model.ActionKind.Stop) &&
+                    stepIndex != len(branch.Steps) - 1 {
+                    diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "branch terminal must be final"))
+                }
+                if step.Result.Present {
+                    results = append(results, step.Result)
+                }
+            }
+            lastStep = currentStep
+            stepIndex = stepIndex + 1
+        }
+        if terminalCount != 1 {
+            diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "branch must have exactly one final reply or stop"))
+        }
+        expectedOrdinal = expectedOrdinal + 1
+    }
+    if len(behavior.Branches) != len(behavior.Triggers) {
+        diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "trigger and branch counts differ"))
+    }
+    if behavior.NoMatch.Category.Value == "" || behavior.NoMatch.Detail.Value == "" || behavior.OutputContract.Value == "" {
+        diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "missing stop or output contract"))
+    }
+    requiredAuthorities := []model.Authority{}
+    if needsReply {
+        requiredAuthorities = append(requiredAuthorities, model.Authority.CallerReply)
+    }
+    if needsRead {
+        requiredAuthorities = append(requiredAuthorities, model.Authority.WorkspaceRead)
+    }
+    if needsWrite {
+        requiredAuthorities = append(requiredAuthorities, model.Authority.WorkspaceWrite)
+    }
+    for authority in requiredAuthorities {
+        if !HasAuthority(behavior.Authorities, authority) {
+            diagnostics = append(diagnostics, Issue("UNDECLARED_SOURCE_EFFECT", "SKILL.md:1:1",
+                "reachable effect requires " + AuthorityName(authority)))
+        }
+    }
+    if !SameAuthorities(behavior.Authorities, requiredAuthorities) {
+        diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1",
+            "authorities must equal the ordered reachable effect union"))
+    }
+    return diagnostics
+}
+
+func ExpectedProgram(behavior model.BehaviorModel) model.LoweredProgram {
+    return model.LoweredProgram{
+        Inputs: behavior.Inputs,
+        Triggers: behavior.Triggers,
+        Steps: behavior.Steps,
+        Unconditional: behavior.Unconditional,
+        Branches: behavior.Branches,
+        NoMatch: behavior.NoMatch,
+        Authorities: behavior.Authorities,
+        OutputContract: behavior.OutputContract,
+    }
+}
+
+func SameProgram(left model.LoweredProgram, right model.LoweredProgram) bool {
+    return [whether {left} and {right} have exactly equal ordered Inputs, Triggers, Steps, Unconditional, Branches, NoMatch, Authorities, and OutputContract]
+}
+
+func AdapterMatches(
+    recovered model.BundleRecovery,
+    sourceSkill model.SourceSkill,
+    behavior model.BehaviorModel,
+) bool {
+    return [whether {recovered.AdapterName} equals {sourceSkill.Name}, {recovered.AdapterDescription} equals {sourceSkill.Description},
+        and recovered AdapterInputs, AdapterTriggers, and AdapterAuthorities exactly equal the corresponding ordered fields of {behavior}]
+}
+
+func TargetText(target model.TargetVersion) text {
+    if target == model.TargetVersion.V001 {
+        return "0.0.1"
+    }
+    return "0.0.2"
+}
+
+func PreservationDiagnostics(
+    sourceSkill model.SourceSkill,
+    behavior model.BehaviorModel,
+    module model.SafeText,
+    target model.TargetVersion,
+    bundle model.Bundle,
+) []diagnostic.Diagnostic {
+    recovered := render.Recover(bundle, target)
+    if !recovered.Valid {
+        return recovered.Diagnostics
+    }
+    if !SameProgram(ExpectedProgram(behavior), recovered.Program) {
+        return []diagnostic.Diagnostic{Issue("GENERATED_ARTIFACT_INVALID", "main.oi:1:1", "recovered behavior differs")}
+    }
+    if recovered.Module != module || recovered.Version != TargetText(target) {
+        return []diagnostic.Diagnostic{Issue("GENERATED_ARTIFACT_INVALID", "oi.mod:1:1", "module or version differs")}
+    }
+    if !AdapterMatches(recovered, sourceSkill, behavior) {
+        return []diagnostic.Diagnostic{Issue("GENERATED_ARTIFACT_INVALID", "SKILL.md:1:1", "adapter route differs")}
+    }
+    return []diagnostic.Diagnostic{}
+}
+
+func PathText(path fs.Path) text {
+    return [the exact underlying text of {path}]
+}
+
+func EntryTexts(entries []fs.Path) []text {
+    return derive [the exact underlying texts of {entries} ordered by unsigned UTF-8 path bytes]
+}
+
+func KindText(kind fs.Kind) text {
+    switch kind {
+    case fs.Kind.Missing:
+        return "missing"
+    case fs.Kind.File:
+        return "file"
+    default:
+        return "directory"
+    }
+}
+
+func Build(
+    source fs.Path,
+    sourceContent text,
+    destination fs.Observation,
+    module text,
+    target model.TargetVersion,
+    bundle model.Bundle,
+) text {
+    fields := []encoding.Field{
+        encoding.Field{Name: "source", Value: PathText(source)},
+        encoding.Field{Name: "source-content", Value: sourceContent},
+        encoding.Field{Name: "destination", Value: PathText(destination.Path)},
+        encoding.Field{Name: "destination-kind", Value: KindText(destination.Kind)},
+        encoding.Field{Name: "destination-entries", Value: encoding.List(EntryTexts(destination.Entries))},
+        encoding.Field{Name: "module", Value: module},
+    }
+    if target == model.TargetVersion.V002 {
+        fields = append(fields, encoding.Field{Name: "target-version", Value: "0.0.2"})
+    }
+    fields = append(fields, encoding.Field{Name: "main.oi", Value: bundle.MainSource})
+    fields = append(fields, encoding.Field{Name: "oi.mod", Value: bundle.ModuleSource})
+    fields = append(fields, encoding.Field{Name: "SKILL.md", Value: bundle.AdapterSource})
+    return encoding.Record(fields)
+}

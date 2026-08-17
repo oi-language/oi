@@ -1,2 +1,10 @@
 module oi/skills/convert-oi
-oi 0.0.1
+oi 0.0.2
+source internal/convert/convert.oi
+source internal/inspect/inspect.oi
+source internal/model/model.oi
+source internal/proof/proof.oi
+source internal/publish/publish.oi
+source internal/render/render.oi
+source internal/report/report.oi
+source main.oi

@@ -1,0 +1,269 @@
+package inspect
+
+import "std/diagnostic"
+import "std/fs"
+import "oi/skills/convert-oi/internal/model"
+
+const TerminalToken text = "stop"
+
+func ParseSkill(exactBytes text) model.SourceSkill {
+    return derive [parse exact UTF-8 {exactBytes} only as data under the closed convert-oi profile; require LF and four frontmatter lines exactly ---,
+        name colon-space quoted nonempty Safe, description colon-space quoted nonempty Safe, and ---; Safe uses ASCII alphanumeric, space, underscore,
+        hyphen, dot, slash, or colon; forbid escapes, comments, indentation, extra or duplicate keys, alternate order, blanks, CR, and extra frontmatter bytes;
+        retain ExactBytes and the byte-exact Body beginning at physical line five, its zero-based UTF-8 BodyStartByte, BodyStartLine five, and wrapped decoded metadata;
+        success has no diagnostics; failure retains ExactBytes, zeroes every other SourceSkill field, and returns one CONVERSION_UNSUPPORTED diagnostic with
+        Phase conversion, Location SKILL.md:1:1, Detail source is outside the closed convert-oi profile, and empty Trace]
+}
+
+func Extract(source model.SourceSkill) model.Inspection {
+    return derive [parse only the exact Body field of {source} as LF-terminated data with no blank lines; exact ordered headings are # Oi conversion profile, ## Inputs,
+        ## Triggers, ## Steps, ## Prefix, ## Branches, ## Fallback, ## Authorities, ## Output; Identifier starts ASCII letter or underscore then ASCII
+        alphanumeric or underscore; Safe uses ASCII alphanumeric, space, underscore, hyphen, dot, slash, colon; every separator is one ASCII space;
+        accept input ordinal name=Identifier type=text-or-path; trigger ordinal kind=text-equals left=input:Identifier right=literal:quoted-Safe;
+        accept ordinary step forms pass value=reference result=Identifier:text-or-path, read path=reference result=Identifier:text,
+        write path=reference content=reference, reply value=reference, or {TerminalToken} category=quoted-nonempty-Safe detail=quoted-nonempty-Safe;
+        also accept prose-effect ordinal name=Identifier after=earlier-step-Identifier action=write path=reference content=reference;
+        Prefix is exactly prefix none or prefix steps=comma-joined ordinary Identifiers; Branch is branch ordinal trigger=ordinal steps=comma-joined ordinary Identifiers;
+        Fallback is {TerminalToken} category=quoted-nonempty-Safe detail=quoted-nonempty-Safe; Authorities are ordered authority ordinal caller.reply, workspace.read,
+        or workspace.write, or authority none; Output is output contract=quoted-nonempty-Safe followed by final LF;
+        references are input:Identifier, result:Identifier, or literal:quoted-Safe without escapes; infer literal Path only for path operands and Text otherwise;
+        ordinals start one and increase physically; identifiers, bindings, and result sources are unique; references resolve to exact-typed input or earlier result;
+        explicit Prefix and Branch lists name only ordinary steps; insert a prose-effect anchored to an ordinary step immediately after that anchor in each
+        Unconditional or Branch occurrence, preserving physical prose-effect order; never recursively insert a prose-effect anchored to another prose-effect;
+        for each reachable ordinary-anchored prose write emit one ProofFinding in physical order: HiddenPrefixWrite when its anchor is in Prefix, otherwise
+        HiddenWrite when its anchor is in a Branch; for each prose write anchored to an earlier prose write emit HiddenWriteChain; Finding Name, After, and
+        Location are exact wrapped identifiers and SKILL.md physical prose-effect line column one; preserve the first anchored write when a later chain exists;
+        reject every other whitespace, comment, prose, YAML, escape, trailing byte, duplicate, alternate source, or unresolved shape before ordinary validation;
+        success returns Inspection with the complete typed BehaviorModel, no Behavior diagnostics, and exact Findings without inferring authorities;
+        profile failure returns Inspection with empty Findings and a zero BehaviorModel except one CONVERSION_UNSUPPORTED diagnostic whose Phase is conversion,
+        Location SKILL.md:5:1, Detail body is outside the closed convert-oi profile, and Trace is empty]
+}
+
+func PathText(path fs.Path) text {
+    return [the exact underlying text of {path}]
+}
+
+func RuntimeDiagnostic(operation text, problem failure) diagnostic.Diagnostic {
+    return diagnostic.Diagnostic{
+        Category: problem.Category,
+        Phase: problem.Phase,
+        Location: problem.Location,
+        Detail: operation + ": " + problem.Detail,
+        Trace: problem.Trace,
+    }
+}
+
+func ReadSource(source fs.Path) model.SourceRead {
+    missing := fs.Observation{Path: source, Kind: fs.Kind.Missing, Entries: []fs.Path{}}
+    scanned := capture(fs.Scan(source))
+    if scanned.Ok {
+        state := scanned.Value
+        if state.Kind != fs.Kind.File {
+            return model.SourceRead{Observation: state, Content: "", Diagnostics: []diagnostic.Diagnostic{
+                diagnostic.New("CONVERSION_SOURCE_NOT_FILE", "conversion", PathText(source), "source must be a file"),
+            }}
+        }
+        read := capture(fs.Read(source))
+        if read.Ok {
+            return model.SourceRead{Observation: state, Content: read.Value, Diagnostics: []diagnostic.Diagnostic{}}
+        }
+        return model.SourceRead{Observation: state, Content: "", Diagnostics: []diagnostic.Diagnostic{
+            RuntimeDiagnostic("read source", read.Failure),
+        }}
+    }
+    return model.SourceRead{Observation: missing, Content: "", Diagnostics: []diagnostic.Diagnostic{
+        RuntimeDiagnostic("scan source", scanned.Failure),
+    }}
+}
+
+func HasInput(inputs []model.CallerInput, name model.Identifier, valueType model.ValueType) bool {
+    for input in inputs {
+        if input.Name == name && input.Type == valueType {
+            return true
+        }
+    }
+    return false
+}
+
+func EarlierResult(steps []model.Step, ordinal int, name model.Identifier, valueType model.ValueType) bool {
+    for step in steps {
+        if step.Ordinal < ordinal && step.Result.Present && step.Result.Name == name && step.Result.Type == valueType {
+            return true
+        }
+    }
+    return false
+}
+
+func ReferenceValid(
+    behavior model.BehaviorModel,
+    ordinal int,
+    value model.ValueReference,
+    expected model.ValueType,
+) bool {
+    if value.Type != expected {
+        return false
+    }
+    if value.Kind == model.ReferenceKind.Input {
+        return value.Literal.Value == "" && HasInput(behavior.Inputs, value.Name, expected)
+    }
+    if value.Kind == model.ReferenceKind.StepResult {
+        return value.Literal.Value == "" && EarlierResult(behavior.Steps, ordinal, value.Name, expected)
+    }
+    if value.Kind == model.ReferenceKind.Literal {
+        return value.Name.Value == ""
+    }
+    return false
+}
+
+func EmptyReference(value model.ValueReference) bool {
+    return value.Kind == model.ReferenceKind.None && value.Name.Value == "" && value.Literal.Value == ""
+}
+
+func EmptyBinding(value model.Binding) bool {
+    return !value.Present && value.Name.Value == ""
+}
+
+func EmptyStop(value model.StopAction) bool {
+    return value.Category.Value == "" && value.Detail.Value == ""
+}
+
+func Issue(category text, location text, detail text) diagnostic.Diagnostic {
+    return diagnostic.New(category, "conversion", location, detail)
+}
+
+func IsOiKeyword(value text, target model.TargetVersion) bool {
+    switch value {
+    case "package", "import", "const", "type", "struct", "enum", "func", "effect", "uses", "contract":
+        return true
+    case "var", "if", "else", "switch", "case", "default", "for", "in", "select", "return":
+        return true
+    case "break", "continue", "stop", "handoff", "oi", "await", "detach":
+        return true
+    case "text", "bool", "int", "unit", "task", "outcome", "channel", "sender", "receiver", "failure":
+        return true
+    case "true", "false", "none":
+        return true
+    default:
+        return target == model.TargetVersion.V002 && (value == "derive" || value == "map" || value == "set")
+    }
+}
+
+func IsRendererReserved(value text) bool {
+    switch value {
+    case "_", "main", "Result", "Reply", "fs", "caller", "reply":
+        return true
+    case "value", "path", "content":
+        return true
+    default:
+        return false
+    }
+}
+
+func IsOiIntrinsicCall(value text, target model.TargetVersion) bool {
+    switch value {
+    case "len", "append", "capture", "send", "receive":
+        return true
+    default:
+        return target == model.TargetVersion.V002 && (value == "has" || value == "put" || value == "add" || value == "remove")
+    }
+}
+
+func NameUnavailable(value model.Identifier, declared []model.Identifier, target model.TargetVersion) bool {
+    if value.Value == "" || IsOiKeyword(value.Value, target) || IsOiIntrinsicCall(value.Value, target) ||
+        IsRendererReserved(value.Value) {
+        return true
+    }
+    for name in declared {
+        if name == value {
+            return true
+        }
+    }
+    return false
+}
+
+func ValidateShape(behavior model.BehaviorModel, target model.TargetVersion) []diagnostic.Diagnostic {
+    diagnostics := behavior.Diagnostics
+    if len(diagnostics) != 0 {
+        return diagnostics
+    }
+    if behavior.Name.Value == "" || behavior.Description.Value == "" {
+        diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "missing source metadata"))
+    }
+    declaredNames := []model.Identifier{}
+    expectedOrdinal := 1
+    for input in behavior.Inputs {
+        if input.Ordinal != expectedOrdinal || NameUnavailable(input.Name, declaredNames, target) || input.Type == model.ValueType.Unit {
+            diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid caller input ordering"))
+        }
+        declaredNames = append(declaredNames, input.Name)
+        expectedOrdinal = expectedOrdinal + 1
+    }
+    if len(behavior.Inputs) == 0 {
+        diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "missing caller input"))
+    }
+    expectedOrdinal = 1
+    for trigger in behavior.Triggers {
+        if trigger.Ordinal != expectedOrdinal || trigger.Kind != model.PredicateKind.TextEquals ||
+            trigger.Left.Kind != model.ReferenceKind.Input || trigger.Right.Kind != model.ReferenceKind.Literal {
+            diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid trigger ordering"))
+        }
+        if !ReferenceValid(behavior, 1, trigger.Left, model.ValueType.Text) ||
+            !ReferenceValid(behavior, 1, trigger.Right, model.ValueType.Text) {
+            diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid trigger operands"))
+        }
+        expectedOrdinal = expectedOrdinal + 1
+    }
+    if len(behavior.Triggers) == 0 {
+        diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "missing trigger"))
+    }
+    expectedOrdinal = 1
+    for step in behavior.Steps {
+        if step.Ordinal != expectedOrdinal || NameUnavailable(step.Name, declaredNames, target) {
+            diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid step ordering"))
+        }
+        declaredNames = append(declaredNames, step.Name)
+        if step.Result.Present {
+            if NameUnavailable(step.Result.Name, declaredNames, target) || step.Result.Type == model.ValueType.Unit {
+                diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid result binding"))
+            }
+            declaredNames = append(declaredNames, step.Result.Name)
+        }
+        if step.Action == model.ActionKind.Pass {
+            if !ReferenceValid(behavior, step.Ordinal, step.Value, step.Result.Type) || !step.Result.Present ||
+                !EmptyReference(step.Path) || !EmptyReference(step.Content) || !EmptyStop(step.Stop) {
+                diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid pass step"))
+            }
+        }
+        if step.Action == model.ActionKind.Read {
+            if !ReferenceValid(behavior, step.Ordinal, step.Path, model.ValueType.Path) ||
+                !step.Result.Present || step.Result.Type != model.ValueType.Text || !EmptyReference(step.Value) ||
+                !EmptyReference(step.Content) || !EmptyStop(step.Stop) {
+                diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid read step"))
+            }
+        }
+        if step.Action == model.ActionKind.Write {
+            if !ReferenceValid(behavior, step.Ordinal, step.Path, model.ValueType.Path) ||
+                !ReferenceValid(behavior, step.Ordinal, step.Content, model.ValueType.Text) ||
+                !EmptyBinding(step.Result) || !EmptyReference(step.Value) || !EmptyStop(step.Stop) {
+                diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid write step"))
+            }
+        }
+        if step.Action == model.ActionKind.Reply {
+            if !ReferenceValid(behavior, step.Ordinal, step.Value, model.ValueType.Text) || !EmptyBinding(step.Result) ||
+                !EmptyReference(step.Path) || !EmptyReference(step.Content) || !EmptyStop(step.Stop) {
+                diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid reply step"))
+            }
+        }
+        if step.Action == model.ActionKind.Stop {
+            if step.Stop.Category.Value == "" || step.Stop.Detail.Value == "" || !EmptyBinding(step.Result) ||
+                !EmptyReference(step.Value) || !EmptyReference(step.Path) || !EmptyReference(step.Content) {
+                diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid stop step"))
+            }
+        }
+        expectedOrdinal = expectedOrdinal + 1
+    }
+    if len(behavior.Steps) == 0 {
+        diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "missing step"))
+    }
+    return diagnostics
+}

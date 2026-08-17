@@ -1,0 +1,199 @@
+package publish
+
+import "std/diagnostic"
+import "std/fs"
+import "oi/skills/convert-oi/internal/model"
+import "oi/skills/convert-oi/internal/report"
+
+func Child(destination fs.Path, name text) fs.Path {
+    return [the normalized child path named {name} directly within {destination}]
+}
+
+func PathText(path fs.Path) text {
+    return [the exact underlying text of {path}]
+}
+
+func FileSnapshot(path fs.Path, content text) fs.Snapshot {
+    return fs.Snapshot{Path: path, Kind: fs.Kind.File, Entries: []fs.Path{}, Content: content}
+}
+
+func DirectorySnapshot(path fs.Path, entries []fs.Path) fs.Snapshot {
+    return fs.Snapshot{Path: path, Kind: fs.Kind.Directory, Entries: entries, Content: none}
+}
+
+func MissingSnapshot(path fs.Path) fs.Snapshot {
+    return fs.Snapshot{Path: path, Kind: fs.Kind.Missing, Entries: []fs.Path{}, Content: none}
+}
+
+func ExactProof(supplied text?, expected text) bool {
+    var wanted text? = expected
+    return supplied == wanted
+}
+
+func RuntimeDiagnostic(operation text, problem failure) diagnostic.Diagnostic {
+    return diagnostic.Diagnostic{
+        Category: problem.Category,
+        Phase: problem.Phase,
+        Location: problem.Location,
+        Detail: operation + ": " + problem.Detail,
+        Trace: problem.Trace,
+    }
+}
+
+func OneIssue(category text, location text, detail text) []diagnostic.Diagnostic {
+    return []diagnostic.Diagnostic{diagnostic.New(category, "conversion", location, detail)}
+}
+
+func OneRuntimeIssue(operation text, problem failure) []diagnostic.Diagnostic {
+    return []diagnostic.Diagnostic{RuntimeDiagnostic(operation, problem)}
+}
+
+func RaceDetail() text {
+    return "the three-file publish is non-atomic; exact snapshot guards do not distinguish ABA that restores identical guarded state"
+}
+
+func ReadDestination(destination fs.Path) model.DestinationRead {
+    missing := fs.Observation{Path: destination, Kind: fs.Kind.Missing, Entries: []fs.Path{}}
+    scanned := capture(fs.Scan(destination))
+    if scanned.Ok {
+        state := scanned.Value
+        if state.Kind != fs.Kind.Directory {
+            return model.DestinationRead{Observation: state, Diagnostics: OneIssue(
+                "CONVERSION_DESTINATION_NOT_DIRECTORY", PathText(destination), "destination must be a directory",
+            )}
+        }
+        if len(state.Entries) != 0 {
+            return model.DestinationRead{Observation: state, Diagnostics: OneIssue(
+                "CONVERSION_DESTINATION_NOT_EMPTY", PathText(destination), "destination must be empty",
+            )}
+        }
+        return model.DestinationRead{Observation: state, Diagnostics: []diagnostic.Diagnostic{}}
+    }
+    return model.DestinationRead{Observation: missing, Diagnostics: OneRuntimeIssue("scan destination", scanned.Failure)}
+}
+
+func Failed(
+    behavior model.BehaviorModel,
+    bundle model.Bundle,
+    exactProof text,
+    writes int,
+    verified int,
+    remaining []fs.Path,
+    recovery []fs.Path,
+    diagnostics []diagnostic.Diagnostic,
+) report.ConversionReport {
+    return report.Failed(
+        behavior, bundle, exactProof, writes, verified, remaining, recovery, false, RaceDetail(), diagnostics,
+    )
+}
+
+func Publish(
+    source fs.Path,
+    sourceContent text,
+    destination fs.Observation,
+    behavior model.BehaviorModel,
+    bundle model.Bundle,
+    exactProof text,
+) report.ConversionReport {
+    root := destination.Path
+    mainPath := Child(root, "main.oi")
+    modulePath := Child(root, "oi.mod")
+    adapterPath := Child(root, "SKILL.md")
+    sourceGuard := FileSnapshot(source, sourceContent)
+    emptyGuard := DirectorySnapshot(root, destination.Entries)
+    mainMissing := MissingSnapshot(mainPath)
+    moduleMissing := MissingSnapshot(modulePath)
+    adapterMissing := MissingSnapshot(adapterPath)
+    all := []fs.Path{mainPath, modulePath, adapterPath}
+
+    mainWrite := capture(fs.WriteIfCurrent(
+        []fs.Snapshot{sourceGuard, emptyGuard, mainMissing, moduleMissing, adapterMissing},
+        mainPath,
+        bundle.MainSource,
+    ))
+    if mainWrite.Ok {
+        if !mainWrite.Value {
+            return Failed(behavior, bundle, exactProof, 0, 0, all, []fs.Path{},
+                OneIssue("CONVERSION_DRIFT", PathText(root), "source or destination changed before main.oi"))
+        }
+    } else {
+        return Failed(behavior, bundle, exactProof, 0, 0, all, []fs.Path{}, OneRuntimeIssue("write main.oi", mainWrite.Failure))
+    }
+
+    moduleWrite := capture(fs.WriteIfCurrent(
+        []fs.Snapshot{
+            sourceGuard,
+            DirectorySnapshot(root, []fs.Path{mainPath}),
+            FileSnapshot(mainPath, bundle.MainSource),
+            moduleMissing,
+            adapterMissing,
+        },
+        modulePath,
+        bundle.ModuleSource,
+    ))
+    if moduleWrite.Ok {
+        if !moduleWrite.Value {
+            return Failed(behavior, bundle, exactProof, 1, 0, []fs.Path{modulePath, adapterPath}, []fs.Path{mainPath},
+                OneIssue("CONVERSION_DRIFT", PathText(root), "source or destination changed before oi.mod"))
+        }
+    } else {
+        return Failed(behavior, bundle, exactProof, 1, 0, []fs.Path{modulePath, adapterPath}, []fs.Path{mainPath},
+            OneRuntimeIssue("write oi.mod", moduleWrite.Failure))
+    }
+
+    adapterWrite := capture(fs.WriteIfCurrent(
+        []fs.Snapshot{
+            sourceGuard,
+            DirectorySnapshot(root, []fs.Path{mainPath, modulePath}),
+            FileSnapshot(mainPath, bundle.MainSource),
+            FileSnapshot(modulePath, bundle.ModuleSource),
+            adapterMissing,
+        },
+        adapterPath,
+        bundle.AdapterSource,
+    ))
+    if adapterWrite.Ok {
+        if !adapterWrite.Value {
+            return Failed(behavior, bundle, exactProof, 2, 0, []fs.Path{adapterPath}, []fs.Path{mainPath, modulePath},
+                OneIssue("CONVERSION_DRIFT", PathText(root), "source or destination changed before SKILL.md"))
+        }
+    } else {
+        return Failed(behavior, bundle, exactProof, 2, 0, []fs.Path{adapterPath}, []fs.Path{mainPath, modulePath},
+            OneRuntimeIssue("write SKILL.md", adapterWrite.Failure))
+    }
+
+    recovery := []fs.Path{mainPath, modulePath, adapterPath}
+    mainRead := capture(fs.Read(mainPath))
+    if mainRead.Ok {
+        if mainRead.Value != bundle.MainSource {
+            return Failed(behavior, bundle, exactProof, 3, 0, []fs.Path{}, recovery,
+                OneIssue("CONVERSION_WRITE_VERIFICATION_FAILED", PathText(root), "written artifact mismatch"))
+        }
+    } else {
+        return Failed(behavior, bundle, exactProof, 3, 0, []fs.Path{}, recovery,
+            OneRuntimeIssue("reread main.oi", mainRead.Failure))
+    }
+
+    moduleRead := capture(fs.Read(modulePath))
+    if moduleRead.Ok {
+        if moduleRead.Value != bundle.ModuleSource {
+            return Failed(behavior, bundle, exactProof, 3, 1, []fs.Path{}, recovery,
+                OneIssue("CONVERSION_WRITE_VERIFICATION_FAILED", PathText(root), "written artifact mismatch"))
+        }
+    } else {
+        return Failed(behavior, bundle, exactProof, 3, 1, []fs.Path{}, recovery,
+            OneRuntimeIssue("reread oi.mod", moduleRead.Failure))
+    }
+
+    adapterRead := capture(fs.Read(adapterPath))
+    if adapterRead.Ok {
+        if adapterRead.Value != bundle.AdapterSource {
+            return Failed(behavior, bundle, exactProof, 3, 2, []fs.Path{}, recovery,
+                OneIssue("CONVERSION_WRITE_VERIFICATION_FAILED", PathText(root), "written artifact mismatch"))
+        }
+    } else {
+        return Failed(behavior, bundle, exactProof, 3, 2, []fs.Path{}, recovery,
+            OneRuntimeIssue("reread SKILL.md", adapterRead.Failure))
+    }
+    return report.Passed(behavior, bundle, exactProof, 3, 3, []fs.Path{}, []fs.Path{}, false, RaceDetail())
+}

@@ -1,0 +1,27 @@
+package main
+
+import "std/fs"
+
+type Result text [the value is the exact file content]
+
+effect Reply(value Result) unit {
+    uses caller.reply
+    contract [deliver {value} exactly once to the caller]
+}
+
+func read_file(path fs.Path) text {
+    return fs.Read(path)
+}
+
+func reply_result(value text) {
+    Reply(Result(value))
+}
+
+func main(request text, source fs.Path) {
+    if request == "read source" {
+        result_text := read_file(source)
+        reply_result(result_text)
+        return
+    }
+    stop("NO_TRIGGER", "no trigger matched")
+}

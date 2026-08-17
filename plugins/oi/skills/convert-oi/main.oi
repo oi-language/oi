@@ -9,6 +9,13 @@ effect Reply(value report.ConversionReport) unit {
     contract [deliver {value} exactly once to the caller]
 }
 
-func main(source fs.Path, destination fs.Path, module text, mode convert.Mode, proof text?) {
-    Reply(convert.Convert(source, destination, module, mode, proof))
+func main(
+    source fs.Path,
+    destination fs.Path,
+    module text,
+    targetVersion text,
+    mode convert.Mode,
+    proof text?,
+) {
+    Reply(convert.Convert(source, destination, module, targetVersion, mode, proof))
 }

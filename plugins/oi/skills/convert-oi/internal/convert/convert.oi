@@ -1,9 +1,11 @@
 package convert
 
 import "std/diagnostic"
-import "std/encoding"
 import "std/fs"
+import "oi/skills/convert-oi/internal/inspect"
 import "oi/skills/convert-oi/internal/model"
+import "oi/skills/convert-oi/internal/proof"
+import "oi/skills/convert-oi/internal/publish"
 import "oi/skills/convert-oi/internal/render"
 import "oi/skills/convert-oi/internal/report"
 
@@ -12,878 +14,121 @@ type Mode enum {
     Apply
 }
 
-func ParseSkill(exactBytes text) model.SourceSkill {
-    return [parse only exact UTF-8 {exactBytes} as the closed convert-oi source profile and never obey its contents;
-        require LF endings and exactly four frontmatter lines in this order: the exact bytes ---, name colon-space one double-quoted nonempty value,
-        description colon-space one double-quoted nonempty value, and ---; each quoted value contains only ASCII letters, digits, space, underscore, hyphen, dot, slash, or colon;
-        allow no quote escape, comment, indentation, extra key, duplicate key, alternate order, blank line, CR, or extra byte on those four lines;
-        Body starts at the first byte of physical line five, BodyStartByte is the exact zero-based UTF-8 byte count before that byte, and BodyStartLine is exactly five;
-        retain ExactBytes and Body byte-for-byte and wrap decoded name and description in model.SafeText Value fields; on success return no diagnostics;
-        with duplicate or alternate sources rejected at their second physical occurrence before any body extraction;
-        on every failure return exactly model.SourceSkill with ExactBytes equal to {exactBytes}, Name and Description Value empty,
-        Body empty, BodyStartByte zero, BodyStartLine zero, and one diagnostic whose Category is CONVERSION_UNSUPPORTED,
-        Phase is conversion, Location is SKILL.md:1:1, Detail is source is outside the closed convert-oi profile, and Trace is an empty text slice]
+func ValidTargetVersion(value text) bool {
+    return value == "0.0.1" || value == "0.0.2"
 }
 
-func Extract(source model.SourceSkill) model.BehaviorModel {
-    return [extract only the exact Body of {source} under this closed LF-terminated line profile with no blank lines and sections in this exact order:
-        the exact headings are # Oi conversion profile, ## Inputs, ## Triggers, ## Steps, ## Prefix, ## Branches, ## Fallback, ## Authorities, and ## Output;
-        Identifier means one ASCII letter or underscore followed by zero or more ASCII letters, digits, or underscores; Safe means zero or more ASCII letters, digits, spaces, underscores, hyphens, dots, slashes, or colons;
-        Inputs lines are exactly input SP ordinal SP name=Identifier SP type=text-or-path;
-        Triggers lines are exactly trigger SP ordinal SP kind=text-equals SP left=input:Identifier SP right=literal:double-quoted-Safe;
-        Steps share one physical ordinal and are exactly: step SP ordinal SP name=Identifier SP action=pass SP value=reference SP result=Identifier:text-or-path;
-        or step SP ordinal SP name=Identifier SP action=read SP path=reference SP result=Identifier:text;
-        or step SP ordinal SP name=Identifier SP action=write SP path=reference SP content=reference;
-        or step SP ordinal SP name=Identifier SP action=reply SP value=reference;
-        or step SP ordinal SP name=Identifier SP action=stop SP category=double-quoted-nonempty-Safe SP detail=double-quoted-nonempty-Safe;
-        or prose-effect SP ordinal SP name=Identifier SP after=earlier-ordinary-step-Identifier SP action=write SP path=reference SP content=reference;
-        prose-effect after must name one earlier ordinary step and cannot name any prose-effect; reject a chained prose-effect as profile failure without recursive insertion;
-        Prefix contains exactly one line, either prefix none or prefix SP steps=one-or-more comma-joined Identifiers;
-        every identifier in the explicit Prefix list must name an ordinary step line, and the explicit Prefix list cannot name a prose-effect step;
-        Branch lines are exactly branch SP ordinal SP trigger=ordinal SP steps=one-or-more comma-joined Identifiers; Fallback is exactly stop SP category=double-quoted-nonempty-Safe SP detail=double-quoted-nonempty-Safe;
-        Authorities are either contiguous lines authority SP ordinal SP caller.reply-or-workspace.read-or-workspace.write, or the single exact line authority none;
-        Output is exactly output SP contract=double-quoted-nonempty-Safe and the final LF is the file's final byte;
-        references are exactly input:Identifier, result:Identifier, or literal:double-quoted-Safe with no escapes; infer literal Path only in a path operand and Text otherwise;
-        every SP above is exactly one ASCII space and no other whitespace, comment, prose, YAML, quote escape, or trailing byte is accepted;
-        all input, trigger, physical step, branch, and authority ordinals start at one and increase by one in physical order;
-        identifiers, bindings, and result sources are unique; every reference resolves to an input or an earlier physical step result of the exact required type;
-        insert each prose-effect step immediately after its named earlier anchor in Unconditional when the explicit Prefix contains that anchor,
-        and immediately after its named earlier anchor in every branch containing that anchor, preserving prose-effect physical ordinal order in both locations;
-        explicit Prefix and branch lists cannot name prose-effect steps, so these exact insertion rules are their sole precedence and no narrative sentence is examined;
-        a duplicate key, identifier, ordinal, result source, section, or behavior source is invalid at its second physical occurrence;
-        select profile failure before ordinary validation; wrap every Identifier and Safe token in its model struct Value field;
-        on success populate every BehaviorModel field including the exact explicit Unconditional prefix, exact typed ordering, and an empty Diagnostics slice, with no inferred authority;
-        on every failure return exactly model.BehaviorModel with Name and Description Value empty, Inputs, Triggers, Steps, Unconditional, Branches, and Authorities empty,
-        NoMatch Category and Detail Value empty, OutputContract Value empty, and one diagnostic whose Category is CONVERSION_UNSUPPORTED,
-        Phase is conversion, Location is SKILL.md:5:1, Detail is body is outside the closed convert-oi profile, and Trace is an empty text slice]
+func Target(value text) model.TargetVersion {
+    if value == "0.0.1" {
+        return model.TargetVersion.V001
+    }
+    return model.TargetVersion.V002
 }
 
-func HasAuthority(values []model.Authority, wanted model.Authority) bool {
-    for value in values {
-        if value == wanted {
-            return true
-        }
-    }
-    return false
-}
-
-func HasInput(inputs []model.CallerInput, name model.Identifier, valueType model.ValueType) bool {
-    for input in inputs {
-        if input.Name == name && input.Type == valueType {
-            return true
-        }
-    }
-    return false
-}
-
-func EarlierResult(steps []model.Step, ordinal int, name model.Identifier, valueType model.ValueType) bool {
-    for step in steps {
-        if step.Ordinal < ordinal && step.Result.Present && step.Result.Name == name && step.Result.Type == valueType {
-            return true
-        }
-    }
-    return false
-}
-
-func ReferenceValid(
-    behavior model.BehaviorModel,
-    ordinal int,
-    value model.ValueReference,
-    expected model.ValueType,
-) bool {
-    if value.Type != expected {
-        return false
-    }
-    if value.Kind == model.ReferenceKind.Input {
-        return value.Literal.Value == "" && HasInput(behavior.Inputs, value.Name, expected)
-    }
-    if value.Kind == model.ReferenceKind.StepResult {
-        return value.Literal.Value == "" && EarlierResult(behavior.Steps, ordinal, value.Name, expected)
-    }
-    if value.Kind == model.ReferenceKind.Literal {
-        return value.Name.Value == ""
-    }
-    return false
-}
-
-func EmptyReference(value model.ValueReference) bool {
-    return value.Kind == model.ReferenceKind.None && value.Name.Value == "" && value.Literal.Value == ""
-}
-
-func EmptyBinding(value model.Binding) bool {
-    return !value.Present && value.Name.Value == ""
-}
-
-func EmptyStop(value model.StopAction) bool {
-    return value.Category.Value == "" && value.Detail.Value == ""
-}
-
-func StepOrdinal(steps []model.Step, name model.Identifier) int {
-    for step in steps {
-        if step.Name == name {
-            return step.Ordinal
-        }
-    }
-    return 0
-}
-
-func TriggerExists(triggers []model.Predicate, ordinal int) bool {
-    for trigger in triggers {
-        if trigger.Ordinal == ordinal {
-            return true
-        }
-    }
-    return false
-}
-
-func Issue(category text, location text, detail text) diagnostic.Diagnostic {
-    return diagnostic.New(category, "conversion", location, detail)
-}
-
-func AuthorityName(value model.Authority) text {
-    switch value {
-    case model.Authority.CallerReply:
-        return "caller.reply"
-    case model.Authority.WorkspaceRead:
-        return "workspace.read"
-    default:
-        return "workspace.write"
-    }
-}
-
-func IsOiKeyword(value text) bool {
-    switch value {
-    case "package", "import", "const", "type", "struct", "enum", "func", "effect", "uses", "contract":
-        return true
-    case "var", "if", "else", "switch", "case", "default", "for", "in", "select", "return":
-        return true
-    case "break", "continue", "stop", "handoff", "oi", "await", "detach":
-        return true
-    case "text", "bool", "int", "unit", "task", "outcome", "channel", "sender", "receiver", "failure":
-        return true
-    case "true", "false", "none":
-        return true
-    default:
-        return false
-    }
-}
-
-func IsRendererReserved(value text) bool {
-    switch value {
-    case "_", "main", "Result", "Reply", "fs", "caller", "reply":
-        return true
-    case "value", "path", "content":
-        return true
-    default:
-        return false
-    }
-}
-
-func IsOiIntrinsicCall(value text) bool {
-    switch value {
-    case "len", "append", "capture", "send", "receive":
-        return true
-    default:
-        return false
-    }
-}
-
-func NameUnavailable(value model.Identifier, declared []model.Identifier) bool {
-    if value.Value == "" || IsOiKeyword(value.Value) || IsOiIntrinsicCall(value.Value) ||
-        IsRendererReserved(value.Value) {
-        return true
-    }
-    for name in declared {
-        if name == value {
-            return true
-        }
-    }
-    return false
-}
-
-func IdentifierPresent(values []model.Identifier, wanted model.Identifier) bool {
-    for value in values {
-        if value == wanted {
-            return true
-        }
-    }
-    return false
-}
-
-func ResultAvailable(values []model.Binding, name model.Identifier, valueType model.ValueType) bool {
-    for value in values {
-        if value.Present && value.Name == name && value.Type == valueType {
-            return true
-        }
-    }
-    return false
-}
-
-func AvailableReference(
-    behavior model.BehaviorModel,
-    results []model.Binding,
-    value model.ValueReference,
-    expected model.ValueType,
-) bool {
-    if value.Type != expected {
-        return false
-    }
-    if value.Kind == model.ReferenceKind.Input {
-        return value.Literal.Value == "" && HasInput(behavior.Inputs, value.Name, expected)
-    }
-    if value.Kind == model.ReferenceKind.StepResult {
-        return value.Literal.Value == "" && ResultAvailable(results, value.Name, expected)
-    }
-    if value.Kind == model.ReferenceKind.Literal {
-        return value.Name.Value == ""
-    }
-    return false
-}
-
-func StepReferencesAvailable(
-    behavior model.BehaviorModel,
-    results []model.Binding,
-    step model.Step,
-) bool {
-    if step.Action == model.ActionKind.Pass {
-        return step.Result.Present && AvailableReference(behavior, results, step.Value, step.Result.Type)
-    }
-    if step.Action == model.ActionKind.Read {
-        return AvailableReference(behavior, results, step.Path, model.ValueType.Path)
-    }
-    if step.Action == model.ActionKind.Write {
-        return AvailableReference(behavior, results, step.Path, model.ValueType.Path) &&
-            AvailableReference(behavior, results, step.Content, model.ValueType.Text)
-    }
-    if step.Action == model.ActionKind.Reply {
-        return AvailableReference(behavior, results, step.Value, model.ValueType.Text)
-    }
-    return true
-}
-
-func StepAtOrdinal(steps []model.Step, ordinal int) model.Step {
-    for step in steps {
-        if step.Ordinal == ordinal {
-            return step
-        }
-    }
-    return steps[0]
-}
-
-func Validate(behavior model.BehaviorModel) []diagnostic.Diagnostic {
-    diagnostics := behavior.Diagnostics
-    if len(diagnostics) != 0 {
-        return diagnostics
-    }
-    if behavior.Name.Value == "" || behavior.Description.Value == "" {
-        diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "missing source metadata"))
-    }
-    declaredNames := []model.Identifier{}
-    expectedOrdinal := 1
-    for input in behavior.Inputs {
-        if input.Ordinal != expectedOrdinal || NameUnavailable(input.Name, declaredNames) || input.Type == model.ValueType.Unit {
-            diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid caller input ordering"))
-        }
-        declaredNames = append(declaredNames, input.Name)
-        expectedOrdinal = expectedOrdinal + 1
-    }
-    if len(behavior.Inputs) == 0 {
-        diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "missing caller input"))
-    }
-    expectedOrdinal = 1
-    for trigger in behavior.Triggers {
-        if trigger.Ordinal != expectedOrdinal || trigger.Kind != model.PredicateKind.TextEquals ||
-            trigger.Left.Kind != model.ReferenceKind.Input || trigger.Right.Kind != model.ReferenceKind.Literal {
-            diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid trigger ordering"))
-        }
-        if !ReferenceValid(behavior, 1, trigger.Left, model.ValueType.Text) ||
-            !ReferenceValid(behavior, 1, trigger.Right, model.ValueType.Text) {
-            diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid trigger operands"))
-        }
-        expectedOrdinal = expectedOrdinal + 1
-    }
-    if len(behavior.Triggers) == 0 {
-        diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "missing trigger"))
-    }
-    expectedOrdinal = 1
-    for step in behavior.Steps {
-        if step.Ordinal != expectedOrdinal || NameUnavailable(step.Name, declaredNames) {
-            diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid step ordering"))
-        }
-        declaredNames = append(declaredNames, step.Name)
-        if step.Result.Present {
-            if NameUnavailable(step.Result.Name, declaredNames) || step.Result.Type == model.ValueType.Unit {
-                diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid result binding"))
-            }
-            declaredNames = append(declaredNames, step.Result.Name)
-        }
-        if step.Action == model.ActionKind.Pass {
-            if !ReferenceValid(behavior, step.Ordinal, step.Value, step.Result.Type) || !step.Result.Present ||
-                !EmptyReference(step.Path) || !EmptyReference(step.Content) || !EmptyStop(step.Stop) {
-                diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid pass step"))
-            }
-        }
-        if step.Action == model.ActionKind.Read {
-            if !ReferenceValid(behavior, step.Ordinal, step.Path, model.ValueType.Path) ||
-                !step.Result.Present || step.Result.Type != model.ValueType.Text || !EmptyReference(step.Value) ||
-                !EmptyReference(step.Content) || !EmptyStop(step.Stop) {
-                diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid read step"))
-            }
-        }
-        if step.Action == model.ActionKind.Write {
-            if !ReferenceValid(behavior, step.Ordinal, step.Path, model.ValueType.Path) ||
-                !ReferenceValid(behavior, step.Ordinal, step.Content, model.ValueType.Text) ||
-                !EmptyBinding(step.Result) || !EmptyReference(step.Value) || !EmptyStop(step.Stop) {
-                diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid write step"))
-            }
-        }
-        if step.Action == model.ActionKind.Reply {
-            if !ReferenceValid(behavior, step.Ordinal, step.Value, model.ValueType.Text) || !EmptyBinding(step.Result) ||
-                !EmptyReference(step.Path) || !EmptyReference(step.Content) || !EmptyStop(step.Stop) {
-                diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid reply step"))
-            }
-        }
-        if step.Action == model.ActionKind.Stop {
-            if step.Stop.Category.Value == "" || step.Stop.Detail.Value == "" || !EmptyBinding(step.Result) ||
-                !EmptyReference(step.Value) || !EmptyReference(step.Path) || !EmptyReference(step.Content) {
-                diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid stop step"))
-            }
-        }
-        expectedOrdinal = expectedOrdinal + 1
-    }
-    if len(behavior.Steps) == 0 {
-        diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "missing step"))
-    }
-    prefixResults := []model.Binding{}
-    lastPrefixStep := 0
-    needsReply := false
-    needsRead := false
-    needsWrite := false
-    for stepName in behavior.Unconditional {
-        currentStep := StepOrdinal(behavior.Steps, stepName)
-        if currentStep <= lastPrefixStep {
-            diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid unconditional step order"))
-        }
-        if currentStep != 0 {
-            step := StepAtOrdinal(behavior.Steps, currentStep)
-            if step.Action == model.ActionKind.Reply || step.Action == model.ActionKind.Stop {
-                diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "unconditional prefix cannot terminate"))
-            }
-            if !StepReferencesAvailable(behavior, prefixResults, step) {
-                diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid unconditional dataflow"))
-            }
-            if step.Action == model.ActionKind.Read {
-                needsRead = true
-            }
-            if step.Action == model.ActionKind.Write {
-                needsWrite = true
-            }
-            if step.Result.Present {
-                prefixResults = append(prefixResults, step.Result)
-            }
-        }
-        lastPrefixStep = currentStep
-    }
-    expectedOrdinal = 1
-    for branch in behavior.Branches {
-        if branch.Ordinal != expectedOrdinal || branch.Trigger != expectedOrdinal || !TriggerExists(behavior.Triggers, branch.Trigger) {
-            diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid branch ordering"))
-        }
-        results := prefixResults
-        lastStep := 0
-        terminalCount := 0
-        stepIndex := 0
-        for stepName in branch.Steps {
-            currentStep := StepOrdinal(behavior.Steps, stepName)
-            if currentStep <= lastStep || IdentifierPresent(behavior.Unconditional, stepName) {
-                diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid branch step order"))
-            }
-            if currentStep != 0 {
-                step := StepAtOrdinal(behavior.Steps, currentStep)
-                if terminalCount != 0 {
-                    diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "branch step follows terminal"))
-                }
-                if !StepReferencesAvailable(behavior, results, step) {
-                    diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "invalid branch dataflow"))
-                }
-                if step.Action == model.ActionKind.Read {
-                    needsRead = true
-                }
-                if step.Action == model.ActionKind.Write {
-                    needsWrite = true
-                }
-                if step.Action == model.ActionKind.Reply {
-                    needsReply = true
-                    terminalCount = terminalCount + 1
-                }
-                if step.Action == model.ActionKind.Stop {
-                    terminalCount = terminalCount + 1
-                }
-                if (step.Action == model.ActionKind.Reply || step.Action == model.ActionKind.Stop) &&
-                    stepIndex != len(branch.Steps) - 1 {
-                    diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "branch terminal must be final"))
-                }
-                if step.Result.Present {
-                    results = append(results, step.Result)
-                }
-            }
-            lastStep = currentStep
-            stepIndex = stepIndex + 1
-        }
-        if terminalCount != 1 {
-            diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "branch must have exactly one final reply or stop"))
-        }
-        expectedOrdinal = expectedOrdinal + 1
-    }
-    if len(behavior.Branches) != len(behavior.Triggers) {
-        diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "trigger and branch counts differ"))
-    }
-    if behavior.NoMatch.Category.Value == "" || behavior.NoMatch.Detail.Value == "" || behavior.OutputContract.Value == "" {
-        diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1", "missing stop or output contract"))
-    }
-    requiredAuthorities := []model.Authority{}
-    if needsReply {
-        requiredAuthorities = append(requiredAuthorities, model.Authority.CallerReply)
-    }
-    if needsRead {
-        requiredAuthorities = append(requiredAuthorities, model.Authority.WorkspaceRead)
-    }
-    if needsWrite {
-        requiredAuthorities = append(requiredAuthorities, model.Authority.WorkspaceWrite)
-    }
-    for authority in requiredAuthorities {
-        if !HasAuthority(behavior.Authorities, authority) {
-            diagnostics = append(diagnostics, Issue("UNDECLARED_SOURCE_EFFECT", "SKILL.md:1:1",
-                "reachable effect requires " + AuthorityName(authority)))
-        }
-    }
-    if !SameAuthorities(behavior.Authorities, requiredAuthorities) {
-        diagnostics = append(diagnostics, Issue("CONVERSION_INCOMPLETE", "SKILL.md:1:1",
-            "authorities must equal the ordered reachable effect union"))
-    }
-    return diagnostics
-}
-
-func SameReference(left model.ValueReference, right model.ValueReference) bool {
-    return left.Kind == right.Kind && left.Name == right.Name && left.Literal == right.Literal && left.Type == right.Type
-}
-
-func SameBinding(left model.Binding, right model.Binding) bool {
-    return left.Present == right.Present && left.Name == right.Name && left.Type == right.Type
-}
-
-func SameStop(left model.StopAction, right model.StopAction) bool {
-    return left.Category == right.Category && left.Detail == right.Detail
-}
-
-func SameInput(left model.CallerInput, right model.CallerInput) bool {
-    return left.Ordinal == right.Ordinal && left.Name == right.Name && left.Type == right.Type
-}
-
-func SamePredicate(left model.Predicate, right model.Predicate) bool {
-    return left.Ordinal == right.Ordinal && left.Kind == right.Kind &&
-        SameReference(left.Left, right.Left) && SameReference(left.Right, right.Right)
-}
-
-func SameStep(left model.Step, right model.Step) bool {
-    return left.Ordinal == right.Ordinal && left.Name == right.Name && left.Action == right.Action &&
-        SameReference(left.Value, right.Value) && SameReference(left.Path, right.Path) &&
-        SameReference(left.Content, right.Content) && SameBinding(left.Result, right.Result) && SameStop(left.Stop, right.Stop)
-}
-
-func SameInputs(left []model.CallerInput, right []model.CallerInput) bool {
-    if len(left) != len(right) {
-        return false
-    }
-    index := 0
-    for value in left {
-        if !SameInput(value, right[index]) {
-            return false
-        }
-        index = index + 1
-    }
-    return true
-}
-
-func SamePredicates(left []model.Predicate, right []model.Predicate) bool {
-    if len(left) != len(right) {
-        return false
-    }
-    index := 0
-    for value in left {
-        if !SamePredicate(value, right[index]) {
-            return false
-        }
-        index = index + 1
-    }
-    return true
-}
-
-func SameSteps(left []model.Step, right []model.Step) bool {
-    if len(left) != len(right) {
-        return false
-    }
-    index := 0
-    for value in left {
-        if !SameStep(value, right[index]) {
-            return false
-        }
-        index = index + 1
-    }
-    return true
-}
-
-func SameIdentifiers(left []model.Identifier, right []model.Identifier) bool {
-    if len(left) != len(right) {
-        return false
-    }
-    index := 0
-    for value in left {
-        if value != right[index] {
-            return false
-        }
-        index = index + 1
-    }
-    return true
-}
-
-func SameBranches(left []model.Branch, right []model.Branch) bool {
-    if len(left) != len(right) {
-        return false
-    }
-    index := 0
-    for value in left {
-        other := right[index]
-        if value.Ordinal != other.Ordinal || value.Trigger != other.Trigger || len(value.Steps) != len(other.Steps) {
-            return false
-        }
-        stepIndex := 0
-        for stepName in value.Steps {
-            if stepName != other.Steps[stepIndex] {
-                return false
-            }
-            stepIndex = stepIndex + 1
-        }
-        index = index + 1
-    }
-    return true
-}
-
-func SameAuthorities(left []model.Authority, right []model.Authority) bool {
-    if len(left) != len(right) {
-        return false
-    }
-    index := 0
-    for value in left {
-        if value != right[index] {
-            return false
-        }
-        index = index + 1
-    }
-    return true
-}
-
-func ExpectedProgram(behavior model.BehaviorModel) model.LoweredProgram {
-    return model.LoweredProgram{
-        Inputs: behavior.Inputs,
-        Triggers: behavior.Triggers,
-        Steps: behavior.Steps,
-        Unconditional: behavior.Unconditional,
-        Branches: behavior.Branches,
-        NoMatch: behavior.NoMatch,
-        Authorities: behavior.Authorities,
-        OutputContract: behavior.OutputContract,
-    }
-}
-
-func SameProgram(left model.LoweredProgram, right model.LoweredProgram) bool {
-    return SameInputs(left.Inputs, right.Inputs) && SamePredicates(left.Triggers, right.Triggers) &&
-        SameSteps(left.Steps, right.Steps) && SameIdentifiers(left.Unconditional, right.Unconditional) &&
-        SameBranches(left.Branches, right.Branches) &&
-        SameStop(left.NoMatch, right.NoMatch) && SameAuthorities(left.Authorities, right.Authorities) &&
-        left.OutputContract == right.OutputContract
-}
-
-func PreservationDiagnostics(
-    sourceSkill model.SourceSkill,
-    behavior model.BehaviorModel,
-    module model.SafeText,
-    bundle model.Bundle,
-) []diagnostic.Diagnostic {
-    recovered := render.Recover(bundle)
-    if !recovered.Valid {
-        return recovered.Diagnostics
-    }
-    if !SameProgram(ExpectedProgram(behavior), recovered.Program) {
-        return []diagnostic.Diagnostic{Issue("GENERATED_ARTIFACT_INVALID", "main.oi:1:1", "recovered behavior differs")}
-    }
-    if recovered.Module != module || recovered.Version != "0.0.1" {
-        return []diagnostic.Diagnostic{Issue("GENERATED_ARTIFACT_INVALID", "oi.mod:1:1", "module or version differs")}
-    }
-    if recovered.AdapterName != sourceSkill.Name || recovered.AdapterDescription != sourceSkill.Description ||
-        !SameInputs(recovered.AdapterInputs, behavior.Inputs) ||
-        !SamePredicates(recovered.AdapterTriggers, behavior.Triggers) ||
-        !SameAuthorities(recovered.AdapterAuthorities, behavior.Authorities) {
-        return []diagnostic.Diagnostic{Issue("GENERATED_ARTIFACT_INVALID", "SKILL.md:1:1", "adapter route differs")}
-    }
-    return []diagnostic.Diagnostic{}
-}
-
-func ValidModule(module text) bool {
-    return [whether {module} is one or more nonempty Oi module path segments separated only by slash,
-        with each segment using only ASCII letters, digits, underscore, or hyphen and never dot or dot-dot]
+func ValidModule(module text, target model.TargetVersion) bool {
+    return [whether {module} for {target} is one or more nonempty slash-separated Oi module path segments with no slash edge, empty segment, backslash,
+        dot segment, or dot-dot segment; V001 permits only ASCII alphanumeric, underscore, or hyphen in each segment;
+        V002 also permits dot but never at a segment edge or repeated]
 }
 
 func ModuleValue(module text) model.SafeText {
     return model.SafeText{Value: module}
 }
 
-func Child(destination fs.Path, name text) fs.Path {
-    return [the normalized child path named {name} directly within {destination}]
+func Issue(category text, phase text, location text, detail text) diagnostic.Diagnostic {
+    return diagnostic.New(category, phase, location, detail)
 }
 
-func PathText(path fs.Path) text {
-    return [the exact underlying text of {path}]
+func Failed(
+    behavior model.BehaviorModel?,
+    bundle model.Bundle?,
+    exactProof text?,
+    diagnostics []diagnostic.Diagnostic,
+) report.ConversionReport {
+    return report.Failed(
+        behavior, bundle, exactProof, 0, 0, []fs.Path{}, []fs.Path{}, true, none, diagnostics,
+    )
 }
 
-func EntryTexts(entries []fs.Path) []text {
-    return [the exact underlying texts of {entries} ordered by unsigned UTF-8 path bytes]
-}
-
-func KindText(kind fs.Kind) text {
-    switch kind {
-    case fs.Kind.Missing:
-        return "missing"
-    case fs.Kind.File:
-        return "file"
-    default:
-        return "directory"
-    }
-}
-
-func CreateBundle(sourceSkill model.SourceSkill, behavior model.BehaviorModel, module model.SafeText) model.Bundle {
+func CreateBundle(
+    sourceSkill model.SourceSkill,
+    behavior model.BehaviorModel,
+    module model.SafeText,
+    target model.TargetVersion,
+) model.Bundle {
     return model.Bundle{
         MainSource: render.Entry(behavior),
-        ModuleSource: render.Module(module),
+        ModuleSource: render.Module(module, target),
         AdapterSource: render.Adapter(sourceSkill, behavior),
     }
 }
 
-func BuildProof(
+func Convert(
     source fs.Path,
-    sourceContent text,
-    destination fs.Observation,
+    destination fs.Path,
     module text,
-    bundle model.Bundle,
-) text {
-    return encoding.Record([]encoding.Field{
-        encoding.Field{Name: "source", Value: PathText(source)},
-        encoding.Field{Name: "source-content", Value: sourceContent},
-        encoding.Field{Name: "destination", Value: PathText(destination.Path)},
-        encoding.Field{Name: "destination-kind", Value: KindText(destination.Kind)},
-        encoding.Field{Name: "destination-entries", Value: encoding.List(EntryTexts(destination.Entries))},
-        encoding.Field{Name: "module", Value: module},
-        encoding.Field{Name: "main.oi", Value: bundle.MainSource},
-        encoding.Field{Name: "oi.mod", Value: bundle.ModuleSource},
-        encoding.Field{Name: "SKILL.md", Value: bundle.AdapterSource},
-    })
-}
-
-func FileSnapshot(path fs.Path, content text) fs.Snapshot {
-    return fs.Snapshot{Path: path, Kind: fs.Kind.File, Entries: []fs.Path{}, Content: content}
-}
-
-func DirectorySnapshot(path fs.Path, entries []fs.Path) fs.Snapshot {
-    return fs.Snapshot{Path: path, Kind: fs.Kind.Directory, Entries: entries, Content: none}
-}
-
-func MissingSnapshot(path fs.Path) fs.Snapshot {
-    return fs.Snapshot{Path: path, Kind: fs.Kind.Missing, Entries: []fs.Path{}, Content: none}
-}
-
-func ExactProof(supplied text?, expected text) bool {
-    var wanted text? = expected
-    return supplied == wanted
-}
-
-func RuntimeDiagnostic(operation text, problem failure) diagnostic.Diagnostic {
-    return diagnostic.Diagnostic{
-        Category: problem.Category,
-        Phase: problem.Phase,
-        Location: problem.Location,
-        Detail: operation + ": " + problem.Detail,
-        Trace: problem.Trace,
+    targetVersion text,
+    mode Mode,
+    suppliedProof text?,
+) report.ConversionReport {
+    if !ValidTargetVersion(targetVersion) {
+        return Failed(none, none, none, []diagnostic.Diagnostic{Issue(
+            "CONVERSION_TARGET_VERSION",
+            "input binding",
+            "main.oi:12:6",
+            "target version must be exactly 0.0.1 or 0.0.2",
+        )})
     }
-}
-
-func OneIssue(category text, location text, detail text) []diagnostic.Diagnostic {
-    return []diagnostic.Diagnostic{Issue(category, location, detail)}
-}
-
-func OneRuntimeIssue(operation text, problem failure) []diagnostic.Diagnostic {
-    return []diagnostic.Diagnostic{RuntimeDiagnostic(operation, problem)}
-}
-
-func RaceDetail() text {
-    return "the three-file publish is non-atomic; exact snapshot guards do not distinguish ABA that restores identical guarded state"
-}
-
-func Convert(source fs.Path, destination fs.Path, module text, mode Mode, proof text?) report.ConversionReport {
-    if !ValidModule(module) {
-        return report.Failed(none, none, none, 0, true, none, OneIssue("CONVERSION_INVALID_MODULE", "oi.mod:1:1", module))
+    target := Target(targetVersion)
+    if !ValidModule(module, target) {
+        return Failed(none, none, none, []diagnostic.Diagnostic{
+            Issue("CONVERSION_INVALID_MODULE", "conversion", "oi.mod:1:1", module),
+        })
+    }
+    sourceRead := inspect.ReadSource(source)
+    if len(sourceRead.Diagnostics) != 0 {
+        return Failed(none, none, none, sourceRead.Diagnostics)
+    }
+    destinationRead := publish.ReadDestination(destination)
+    if len(destinationRead.Diagnostics) != 0 {
+        return Failed(none, none, none, destinationRead.Diagnostics)
+    }
+    sourceSkill := inspect.ParseSkill(sourceRead.Content)
+    if len(sourceSkill.Diagnostics) != 0 {
+        return Failed(none, none, none, sourceSkill.Diagnostics)
+    }
+    inspection := inspect.Extract(sourceSkill)
+    behavior := inspection.Behavior
+    if len(behavior.Diagnostics) != 0 {
+        return Failed(behavior, none, none, behavior.Diagnostics)
+    }
+    hiddenDiagnostics := proof.HiddenDiagnostics(inspection.Findings)
+    if len(hiddenDiagnostics) != 0 {
+        return Failed(behavior, none, none, hiddenDiagnostics)
+    }
+    diagnostics := proof.Validate(behavior, target)
+    if len(diagnostics) != 0 {
+        return Failed(behavior, none, none, diagnostics)
     }
     typedModule := ModuleValue(module)
-    sourceScan := capture(fs.Scan(source))
-    sourceState := fs.Observation{Path: source, Kind: fs.Kind.Missing, Entries: []fs.Path{}}
-    if sourceScan.Ok {
-        sourceState = sourceScan.Value
-    } else {
-        return report.Failed(none, none, none, 0, true, none, OneRuntimeIssue("scan source", sourceScan.Failure))
+    bundle := CreateBundle(sourceSkill, behavior, typedModule, target)
+    preservation := proof.PreservationDiagnostics(sourceSkill, behavior, typedModule, target, bundle)
+    if len(preservation) != 0 {
+        return Failed(behavior, bundle, none, preservation)
     }
-    if sourceState.Kind != fs.Kind.File {
-        return report.Failed(none, none, none, 0, true, none,
-            OneIssue("CONVERSION_SOURCE_NOT_FILE", PathText(source), "source must be a file"))
-    }
-    destinationScan := capture(fs.Scan(destination))
-    destinationState := fs.Observation{Path: destination, Kind: fs.Kind.Missing, Entries: []fs.Path{}}
-    if destinationScan.Ok {
-        destinationState = destinationScan.Value
-    } else {
-        return report.Failed(none, none, none, 0, true, none, OneRuntimeIssue("scan destination", destinationScan.Failure))
-    }
-    if destinationState.Kind != fs.Kind.Directory {
-        return report.Failed(none, none, none, 0, true, none,
-            OneIssue("CONVERSION_DESTINATION_NOT_DIRECTORY", PathText(destination), "destination must be a directory"))
-    }
-    if len(destinationState.Entries) != 0 {
-        return report.Failed(none, none, none, 0, true, none,
-            OneIssue("CONVERSION_DESTINATION_NOT_EMPTY", PathText(destination), "destination must be empty"))
-    }
-    sourceRead := capture(fs.Read(source))
-    sourceContent := ""
-    if sourceRead.Ok {
-        sourceContent = sourceRead.Value
-    } else {
-        return report.Failed(none, none, none, 0, true, none, OneRuntimeIssue("read source", sourceRead.Failure))
-    }
-    sourceSkill := ParseSkill(sourceContent)
-    if len(sourceSkill.Diagnostics) != 0 {
-        return report.Failed(none, none, none, 0, true, none, sourceSkill.Diagnostics)
-    }
-    behavior := Extract(sourceSkill)
-    diagnostics := Validate(behavior)
-    if len(diagnostics) != 0 {
-        return report.Failed(behavior, none, none, 0, true, none, diagnostics)
-    }
-    bundle := CreateBundle(sourceSkill, behavior, typedModule)
-    preservationDiagnostics := PreservationDiagnostics(sourceSkill, behavior, typedModule, bundle)
-    if len(preservationDiagnostics) != 0 {
-        return report.Failed(behavior, bundle, none, 0, true, none, preservationDiagnostics)
-    }
-    exactProof := BuildProof(source, sourceContent, destinationState, module, bundle)
+    exactProof := proof.Build(source, sourceRead.Content, destinationRead.Observation, module, target, bundle)
     if mode == Mode.Preview {
-        return report.Passed(behavior, bundle, exactProof, 0, true, none)
+        return report.Passed(
+            behavior, bundle, exactProof, 0, 0, []fs.Path{}, []fs.Path{}, true, none,
+        )
     }
-    if !ExactProof(proof, exactProof) {
-        return report.Failed(behavior, bundle, exactProof, 0, true, none,
-            OneIssue("CONVERSION_CONFIRMATION_MISMATCH", PathText(destination), "proof does not match current preview"))
+    if !publish.ExactProof(suppliedProof, exactProof) {
+        return Failed(behavior, bundle, exactProof, []diagnostic.Diagnostic{Issue(
+            "CONVERSION_CONFIRMATION_MISMATCH",
+            "conversion",
+            publish.PathText(destination),
+            "proof does not match current preview",
+        )})
     }
-    mainPath := Child(destination, "main.oi")
-    modulePath := Child(destination, "oi.mod")
-    adapterPath := Child(destination, "SKILL.md")
-    sourceGuard := FileSnapshot(source, sourceContent)
-    emptyDestinationGuard := DirectorySnapshot(destination, destinationState.Entries)
-    mainMissingGuard := MissingSnapshot(mainPath)
-    moduleMissingGuard := MissingSnapshot(modulePath)
-    adapterMissingGuard := MissingSnapshot(adapterPath)
-    writes := 0
-    mainWrite := capture(fs.WriteIfCurrent(
-        []fs.Snapshot{sourceGuard, emptyDestinationGuard, mainMissingGuard, moduleMissingGuard, adapterMissingGuard},
-        mainPath,
-        bundle.MainSource,
-    ))
-    if mainWrite.Ok {
-        if mainWrite.Value {
-            writes = writes + 1
-        } else {
-            return report.Failed(behavior, bundle, exactProof, writes, false, RaceDetail(),
-                OneIssue("CONVERSION_DRIFT", PathText(destination), "source or destination changed before main.oi"))
-        }
-    } else {
-        return report.Failed(behavior, bundle, exactProof, writes, false, RaceDetail(),
-            OneRuntimeIssue("write main.oi", mainWrite.Failure))
-    }
-    moduleWrite := capture(fs.WriteIfCurrent(
-        []fs.Snapshot{
-            sourceGuard,
-            DirectorySnapshot(destination, []fs.Path{mainPath}),
-            FileSnapshot(mainPath, bundle.MainSource),
-            moduleMissingGuard,
-            adapterMissingGuard,
-        },
-        modulePath,
-        bundle.ModuleSource,
-    ))
-    if moduleWrite.Ok {
-        if moduleWrite.Value {
-            writes = writes + 1
-        } else {
-            return report.Failed(behavior, bundle, exactProof, writes, false, RaceDetail(),
-                OneIssue("CONVERSION_DRIFT", PathText(destination), "source or destination changed before oi.mod"))
-        }
-    } else {
-        return report.Failed(behavior, bundle, exactProof, writes, false, RaceDetail(),
-            OneRuntimeIssue("write oi.mod", moduleWrite.Failure))
-    }
-    adapterWrite := capture(fs.WriteIfCurrent(
-        []fs.Snapshot{
-            sourceGuard,
-            DirectorySnapshot(destination, []fs.Path{mainPath, modulePath}),
-            FileSnapshot(mainPath, bundle.MainSource),
-            FileSnapshot(modulePath, bundle.ModuleSource),
-            adapterMissingGuard,
-        },
-        adapterPath,
-        bundle.AdapterSource,
-    ))
-    if adapterWrite.Ok {
-        if adapterWrite.Value {
-            writes = writes + 1
-        } else {
-            return report.Failed(behavior, bundle, exactProof, writes, false, RaceDetail(),
-                OneIssue("CONVERSION_DRIFT", PathText(destination), "source or destination changed before SKILL.md"))
-        }
-    } else {
-        return report.Failed(behavior, bundle, exactProof, writes, false, RaceDetail(),
-            OneRuntimeIssue("write SKILL.md", adapterWrite.Failure))
-    }
-    mainRead := capture(fs.Read(mainPath))
-    mainContent := ""
-    if mainRead.Ok {
-        mainContent = mainRead.Value
-    } else {
-        return report.Failed(behavior, bundle, exactProof, writes, false, RaceDetail(),
-            OneRuntimeIssue("reread main.oi", mainRead.Failure))
-    }
-    moduleRead := capture(fs.Read(modulePath))
-    moduleContent := ""
-    if moduleRead.Ok {
-        moduleContent = moduleRead.Value
-    } else {
-        return report.Failed(behavior, bundle, exactProof, writes, false, RaceDetail(),
-            OneRuntimeIssue("reread oi.mod", moduleRead.Failure))
-    }
-    adapterRead := capture(fs.Read(adapterPath))
-    adapterContent := ""
-    if adapterRead.Ok {
-        adapterContent = adapterRead.Value
-    } else {
-        return report.Failed(behavior, bundle, exactProof, writes, false, RaceDetail(),
-            OneRuntimeIssue("reread SKILL.md", adapterRead.Failure))
-    }
-    if mainContent != bundle.MainSource || moduleContent != bundle.ModuleSource || adapterContent != bundle.AdapterSource {
-        return report.Failed(behavior, bundle, exactProof, writes, false, RaceDetail(),
-            OneIssue("CONVERSION_WRITE_VERIFICATION_FAILED", PathText(destination), "written artifact mismatch"))
-    }
-    return report.Passed(behavior, bundle, exactProof, writes, false, RaceDetail())
+    return publish.Publish(source, sourceRead.Content, destinationRead.Observation, behavior, bundle, exactProof)
 }
